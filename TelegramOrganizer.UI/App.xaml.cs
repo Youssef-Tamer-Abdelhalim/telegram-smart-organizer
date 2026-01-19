@@ -62,6 +62,9 @@ namespace TelegramOrganizer.UI
             // V2.0: Download Session Manager
             services.AddSingleton<IDownloadSessionManager, DownloadSessionManager>();
             
+            // V2.0: Download Burst Detector
+            services.AddSingleton<IDownloadBurstDetector, DownloadBurstDetector>();
+            
             // Main Engine - depends on all above services
             services.AddSingleton<SmartOrganizerEngine>();
 

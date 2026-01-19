@@ -16,7 +16,8 @@ namespace TelegramOrganizer.Core.Services
         private readonly IPersistenceService _persistenceService;
         private readonly ISettingsService _settingsService;
         private readonly ILoggingService _logger;
-        private readonly IDownloadSessionManager? _sessionManager; // Optional for v2.0
+        private readonly IDownloadSessionManager? _sessionManager; // Optional v2.0 feature
+        private readonly IDownloadBurstDetector? _burstDetector; // V2.0: Burst detection
 
         private readonly ConcurrentDictionary<string, FileContext> _pendingDownloads = new();
         private readonly ConcurrentDictionary<string, DateTime> _processingFiles = new();
@@ -30,7 +31,8 @@ namespace TelegramOrganizer.Core.Services
             IPersistenceService persistenceService,
             ISettingsService settingsService,
             ILoggingService loggingService,
-            IDownloadSessionManager? sessionManager = null) // Optional for v2.0
+            IDownloadSessionManager? sessionManager = null, // Optional for v2.0
+            IDownloadBurstDetector? burstDetector = null) // V2.0: Optional burst detector
         {
             _watcher = watcher;
             _contextDetector = contextDetector;
@@ -39,6 +41,15 @@ namespace TelegramOrganizer.Core.Services
             _settingsService = settingsService;
             _logger = loggingService;
             _sessionManager = sessionManager;
+            _burstDetector = burstDetector;
+
+            // V2.0: Subscribe to burst events if detector available
+            if (_burstDetector != null)
+            {
+                _burstDetector.BurstStarted += OnBurstStarted;
+                _burstDetector.BurstContinued += OnBurstContinued;
+                _burstDetector.BurstEnded += OnBurstEnded;
+            }
         }
 
         public void Start()
@@ -203,6 +214,18 @@ namespace TelegramOrganizer.Core.Services
                 {
                     _logger.LogDebug($"Skipping duplicate event for: {e.FileName}");
                     return;
+                }
+
+                // V2.0: Record file for burst detection
+                if (_burstDetector != null)
+                {
+                    _burstDetector.RecordDownload(e.FileName);
+                    
+                    var burstStatus = _burstDetector.GetCurrentBurstStatus();
+                    if (burstStatus.IsBurstActive)
+                    {
+                        _logger.LogInfo($"[Burst] {e.FileName} is part of burst ({burstStatus.FileCount} files)");
+                    }
                 }
 
                 string activeWindow = _contextDetector.GetActiveWindowTitle();
@@ -656,6 +679,28 @@ namespace TelegramOrganizer.Core.Services
                    lower.EndsWith(".part") ||
                    lower.EndsWith(".tmp") ||
                    lower.EndsWith(".download");
+        }
+
+        // ========================================
+        // V2.0: Burst Detection Event Handlers
+        // ========================================
+
+        private void OnBurstStarted(object? sender, BurstDetectionResult e)
+        {
+            _logger.LogInfo($"[Burst] STARTED: {e.FileCount} files, {e.DurationSeconds:F1}s");
+            OperationCompleted?.Invoke(this, $"[BURST] Started - {e.FileCount} files detected");
+        }
+
+        private void OnBurstContinued(object? sender, BurstDetectionResult e)
+        {
+            _logger.LogDebug($"[Burst] CONTINUED: {e.FileCount} files, avg {e.AverageIntervalSeconds:F1}s/file");
+            OperationCompleted?.Invoke(this, $"[BURST] {e.FileCount} files ({e.Confidence:F0}% confidence)");
+        }
+
+        private void OnBurstEnded(object? sender, BurstDetectionResult e)
+        {
+            _logger.LogInfo($"[Burst] ENDED: {e.FileCount} files in {e.DurationSeconds:F1}s (confidence: {e.Confidence:F2})");
+            OperationCompleted?.Invoke(this, $"[BURST] Completed - {e.FileCount} files organized");
         }
     }
 }
