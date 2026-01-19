@@ -16,6 +16,7 @@ namespace TelegramOrganizer.Core.Services
         private readonly IPersistenceService _persistenceService;
         private readonly ISettingsService _settingsService;
         private readonly ILoggingService _logger;
+        private readonly IDownloadSessionManager? _sessionManager; // Optional for v2.0
 
         private readonly ConcurrentDictionary<string, FileContext> _pendingDownloads = new();
         private readonly ConcurrentDictionary<string, DateTime> _processingFiles = new();
@@ -28,7 +29,8 @@ namespace TelegramOrganizer.Core.Services
             IFileOrganizer fileOrganizer,
             IPersistenceService persistenceService,
             ISettingsService settingsService,
-            ILoggingService loggingService)
+            ILoggingService loggingService,
+            IDownloadSessionManager? sessionManager = null) // Optional for v2.0
         {
             _watcher = watcher;
             _contextDetector = contextDetector;
@@ -36,6 +38,7 @@ namespace TelegramOrganizer.Core.Services
             _persistenceService = persistenceService;
             _settingsService = settingsService;
             _logger = loggingService;
+            _sessionManager = sessionManager;
         }
 
         public void Start()
@@ -213,6 +216,14 @@ namespace TelegramOrganizer.Core.Services
                 string groupName = ExtractTelegramGroupName(activeWindow);
                 _logger.LogDebug($"Extracted group name: '{groupName}' from window: '{activeWindow}'");
 
+                // V2.0: Use session manager if available
+                if (_sessionManager != null)
+                {
+                    _ = HandleFileCreatedWithSessionAsync(e.FileName, e.FullPath, groupName, activeWindow, processName);
+                    return;
+                }
+
+                // V1.0: Fallback to old behavior
                 var context = new FileContext
                 {
                     OriginalTempName = e.FileName,
@@ -244,7 +255,7 @@ namespace TelegramOrganizer.Core.Services
                                 _logger.LogFileOperation("ORGANIZED", e.FileName, groupName: context.DetectedGroupName, 
                                     additionalInfo: result);
                                 OperationCompleted?.Invoke(this, $"[SUCCESS] {e.FileName} -> {context.DetectedGroupName}");
-                                
+                        
                                 // Cleanup
                                 _pendingDownloads.TryRemove(e.FileName, out _);
                                 _persistenceService.RemoveEntry(e.FileName);
@@ -285,13 +296,84 @@ namespace TelegramOrganizer.Core.Services
             }
         }
 
-        private void OnFileRenamed(object? sender, FileEventArgs e)
+        /// <summary>
+        /// V2.0: Handles file created event using session manager.
+        /// This solves the batch download problem by using a shared session context.
+        /// </summary>
+        private async Task HandleFileCreatedWithSessionAsync(string fileName, string fullPath, string groupName, string windowTitle, string processName)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(groupName))
+                    groupName = "Unsorted";
+
+                // Add file to session (creates new session if needed)
+                var session = await _sessionManager!.AddFileToSessionAsync(fileName, groupName, fullPath, 0);
+                
+                _logger.LogInfo($"[V2.0] File '{fileName}' added to session #{session.Id} for '{groupName}' " +
+                              $"(session files: {session.FileCount})");
+                
+                OperationCompleted?.Invoke(this, $"[SESSION] {fileName} → Session #{session.Id} ({groupName})");
+
+                // For temporary files, just track in session
+                if (IsTemporaryFile(fileName))
+                {
+                    _logger.LogDebug($"[V2.0] Temporary file tracked in session #{session.Id}");
+                    return;
+                }
+
+                // For direct downloads, organize immediately but use session context
+                _processingFiles.TryAdd(fileName, DateTime.Now);
+
+                await Task.Run(async () =>
+                {
+                    try
+                    {
+                        bool isReady = await WaitForFileReady(fullPath, 120000);
+                        
+                        if (isReady && File.Exists(fullPath))
+                        {
+                            string result = _fileOrganizer.OrganizeFile(fullPath, session.GroupName);
+                            _logger.LogFileOperation("ORGANIZED_V2", fileName, groupName: session.GroupName, 
+                                additionalInfo: $"Session #{session.Id} | {result}");
+                            OperationCompleted?.Invoke(this, $"[SUCCESS] {fileName} → {session.GroupName} (Session #{session.Id})");
+                        }
+                        else
+                        {
+                            _logger.LogWarning($"[V2.0] File not ready: {fileName}");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError($"[V2.0] Failed to organize: {fileName}", ex);
+                    }
+                    finally
+                    {
+                        _processingFiles.TryRemove(fileName, out _);
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"[V2.0] Error in HandleFileCreatedWithSessionAsync for: {fileName}", ex);
+            }
+        }
+
+        public void OnFileRenamed(object? sender, FileEventArgs e)
         {
             try
             {
                 _logger.LogFileOperation("RENAMED", e.FileName, oldFileName: e.OldFileName);
                 OperationCompleted?.Invoke(this, $"[DEBUG] Rename: {e.OldFileName} -> {e.FileName}");
 
+                // V2.0: Use session manager if available
+                if (_sessionManager != null)
+                {
+                    _ = HandleFileRenamedWithSessionAsync(e.FileName, e.FullPath, e.OldFileName);
+                    return;
+                }
+
+                // V1.0: Fallback to old behavior
                 // Handle temp file renames (still downloading)
                 if (IsTemporaryFile(e.FileName))
                 {
@@ -377,6 +459,76 @@ namespace TelegramOrganizer.Core.Services
             catch (Exception ex)
             {
                 _logger.LogError($"Error in OnFileRenamed for: {e.FileName}", ex);
+            }
+        }
+
+        /// <summary>
+        /// V2.0: Handles file renamed event using session manager.
+        /// Gets group name from the active session instead of current window.
+        /// </summary>
+        private async Task HandleFileRenamedWithSessionAsync(string fileName, string fullPath, string? oldFileName)
+        {
+            try
+            {
+                // If still temporary, just update tracking in session
+                if (IsTemporaryFile(fileName))
+                {
+                    _logger.LogDebug($"[V2.0] Temp file renamed: {oldFileName} → {fileName}");
+                    return;
+                }
+
+                // Final file - get group from active session
+                var session = await _sessionManager!.GetActiveSessionAsync();
+                
+                if (session == null)
+                {
+                    _logger.LogWarning($"[V2.0] No active session for renamed file: {fileName}");
+                    
+                    // Fallback to current window context
+                    string activeWindow = _contextDetector.GetActiveWindowTitle();
+                    string groupName = ExtractTelegramGroupName(activeWindow);
+                    
+                    if (!string.IsNullOrWhiteSpace(groupName) && groupName != "Unsorted")
+                    {
+                        session = await _sessionManager.StartSessionAsync(groupName, activeWindow);
+                        await _sessionManager.AddFileToSessionAsync(fileName, groupName, fullPath, 0);
+                    }
+                    else
+                    {
+                        _logger.LogWarning($"[V2.0] Cannot determine group for: {fileName}");
+                        return;
+                    }
+                }
+
+                _logger.LogInfo($"[V2.0] File complete: {fileName} → {session.GroupName} (Session #{session.Id})");
+                
+                await Task.Run(async () =>
+                {
+                    try
+                    {
+                        bool isReady = await WaitForFileReady(fullPath, 30000);
+                        
+                        if (isReady && File.Exists(fullPath))
+                        {
+                            string result = _fileOrganizer.OrganizeFile(fullPath, session.GroupName);
+                            _logger.LogFileOperation("ORGANIZED_V2", fileName, oldFileName: oldFileName,
+                                groupName: session.GroupName, additionalInfo: $"Session #{session.Id} | {result}");
+                            OperationCompleted?.Invoke(this, $"[SUCCESS] {fileName} → {session.GroupName} (Session #{session.Id})");
+                        }
+                        else
+                        {
+                            _logger.LogWarning($"[V2.0] File not ready after rename: {fileName}");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError($"[V2.0] Failed to organize after rename: {fileName}", ex);
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"[V2.0] Error in HandleFileRenamedWithSessionAsync for: {fileName}", ex);
             }
         }
 

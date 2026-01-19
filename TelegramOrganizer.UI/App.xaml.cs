@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+﻿using System;
+using Microsoft.Extensions.DependencyInjection;
 using System.Windows;
 using TelegramOrganizer.Core.Contracts;
 using TelegramOrganizer.Core.Services;
@@ -37,7 +38,7 @@ namespace TelegramOrganizer.UI
             // Settings Service - needed by FileOrganizer and Engine
             services.AddSingleton<ISettingsService, JsonSettingsService>();
             
-            // Persistence Service - needed by Engine
+            // Persistence Service - needed by Engine (v1.0 compatibility)
             services.AddSingleton<IPersistenceService, JsonPersistenceService>();
             
             // Rules Service - for custom organization rules
@@ -54,6 +55,12 @@ namespace TelegramOrganizer.UI
             
             // File Organization - depends on ISettingsService, IRulesService, IStatisticsService
             services.AddSingleton<IFileOrganizer, FileOrganizerService>();
+            
+            // V2.0: Database Service
+            services.AddSingleton<IDatabaseService, SQLiteDatabaseService>();
+            
+            // V2.0: Download Session Manager
+            services.AddSingleton<IDownloadSessionManager, DownloadSessionManager>();
             
             // Main Engine - depends on all above services
             services.AddSingleton<SmartOrganizerEngine>();
@@ -88,6 +95,9 @@ namespace TelegramOrganizer.UI
             var logger = Services.GetRequiredService<ILoggingService>();
             logger.LogInfo("=== Application Starting ===");
 
+            // V2.0: Initialize database
+            _ = InitializeDatabaseAsync();
+
             // Load settings to check for start minimized
             var settingsService = Services.GetRequiredService<ISettingsService>();
             var settings = settingsService.LoadSettings();
@@ -108,6 +118,61 @@ namespace TelegramOrganizer.UI
             
             // Check for updates in background
             _ = CheckForUpdatesAsync();
+        }
+
+        /// <summary>
+        /// V2.0: Initializes the SQLite database and runs migration if needed.
+        /// </summary>
+        private async Task InitializeDatabaseAsync()
+        {
+            try
+            {
+                var logger = Services.GetRequiredService<ILoggingService>();
+                var database = Services.GetRequiredService<IDatabaseService>();
+                
+                logger.LogInfo("[V2.0] Initializing SQLite database...");
+                
+                // Initialize database schema
+                await database.InitializeDatabaseAsync();
+                
+                logger.LogInfo($"[V2.0] Database initialized at: {database.GetDatabasePath()}");
+                
+                // Check integrity
+                bool isValid = await database.CheckIntegrityAsync();
+                if (!isValid)
+                {
+                    logger.LogWarning("[V2.0] Database integrity check failed!");
+                }
+                
+                // Run migration from JSON to SQLite
+                var migration = new TelegramOrganizer.Infra.Data.Migrations.JsonToSQLiteMigration(
+                    database,
+                    Services.GetRequiredService<IPersistenceService>(),
+                    Services.GetRequiredService<ISettingsService>(),
+                    Services.GetRequiredService<IStatisticsService>(),
+                    Services.GetRequiredService<IRulesService>(),
+                    logger);
+                
+                // Create backup before migration
+                migration.CreateBackup();
+                
+                // Migrate
+                var result = await migration.MigrateIfNeededAsync();
+                
+                if (result.Success)
+                {
+                    logger.LogInfo($"[V2.0] Migration: {result}");
+                }
+                else
+                {
+                    logger.LogError($"[V2.0] Migration failed: {result.Message}", null);
+                }
+            }
+            catch (Exception ex)
+            {
+                var logger = Services.GetRequiredService<ILoggingService>();
+                logger.LogError("[V2.0] Failed to initialize database", ex);
+            }
         }
 
         /// <summary>

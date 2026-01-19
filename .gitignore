@@ -90,6 +90,30 @@ appsettings.*.json
 *.ldf
 *.ndf
 
+# V2.0: SQLite database files (runtime generated)
+*.db
+*.db-shm
+*.db-wal
+organizer.db
+organizer.db-journal
+
+# V1.0: JSON state files (will be migrated)
+state.json
+settings.json
+statistics.json
+# rules.json - keep this in git as it has default rules
+
+# Application data folder
+**/TelegramOrganizer/
+!**/TelegramOrganizer/*.cs
+
+# Log files
+logs/
+*.log
+
+# Backup files from migration
+Backup_v1.0_*/
+
 # Generated files
 *_i.c
 *_p.c
