@@ -1,0 +1,252 @@
+<Window x:Class="TelegramOrganizer.UI.Views.RulesWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Rules Manager" Height="650" Width="900"
+        WindowStartupLocation="CenterOwner"
+        Background="#F5F5F5">
+
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        
+        <Style TargetType="Button" x:Key="ActionButton">
+            <Setter Property="Padding" Value="15,8"/>
+            <Setter Property="Margin" Value="5,0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Background" Value="#007ACC"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="BorderThickness" Value="0"/>
+        </Style>
+        
+        <Style TargetType="Button" x:Key="DangerButton" BasedOn="{StaticResource ActionButton}">
+            <Setter Property="Background" Value="#D32F2F"/>
+        </Style>
+        
+        <Style TargetType="Button" x:Key="SuccessButton" BasedOn="{StaticResource ActionButton}">
+            <Setter Property="Background" Value="#4CAF50"/>
+        </Style>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Border Grid.Row="0" Background="#007ACC" Padding="20,15">
+            <StackPanel>
+                <TextBlock Text="Custom Rules Manager" 
+                           Foreground="White" FontSize="20" FontWeight="Bold"/>
+                <TextBlock Text="Create and manage custom organization rules" 
+                           Foreground="#B3D9FF" FontSize="12" Margin="0,5,0,0"/>
+            </StackPanel>
+        </Border>
+
+        <!-- Content -->
+        <Grid Grid.Row="1" Margin="20">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="350"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Rules List -->
+            <Border Grid.Column="0" Background="White" CornerRadius="8" 
+                    BorderBrush="#E0E0E0" BorderThickness="1" Margin="0,0,10,0">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- List Header -->
+                    <Border Grid.Row="0" Background="#F8F8F8" Padding="15,10" 
+                            BorderBrush="#E0E0E0" BorderThickness="0,0,0,1">
+                        <TextBlock Text="Rules (by priority)" FontWeight="SemiBold"/>
+                    </Border>
+
+                    <!-- Rules ListView -->
+                    <ListBox Grid.Row="1" ItemsSource="{Binding Rules}" 
+                             SelectedItem="{Binding SelectedRule}"
+                             BorderThickness="0" Padding="5">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Border Padding="10" Margin="2" CornerRadius="4"
+                                        BorderBrush="#E0E0E0" BorderThickness="1">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Setter Property="Background" Value="White"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsEnabled}" Value="False">
+                                                    <Setter Property="Background" Value="#F5F5F5"/>
+                                                    <Setter Property="Opacity" Value="0.6"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0">
+                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="13"/>
+                                            <TextBlock Text="{Binding RuleType}" Foreground="#666" FontSize="11"/>
+                                            <TextBlock Foreground="#888" FontSize="10" Margin="0,2,0,0">
+                                                <Run Text="->"/>
+                                                <Run Text="{Binding TargetFolder}"/>
+                                            </TextBlock>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding Priority}" FontSize="16" 
+                                                       Foreground="#007ACC" FontWeight="Bold"
+                                                       HorizontalAlignment="Center"/>
+                                            <TextBlock Text="priority" FontSize="9" Foreground="#999"
+                                                       HorizontalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+
+                    <!-- List Actions -->
+                    <StackPanel Grid.Row="2" Orientation="Horizontal" 
+                                HorizontalAlignment="Center" Margin="10">
+                        <Button Content="+ New" Command="{Binding NewRuleCommand}" 
+                                Style="{StaticResource SuccessButton}"/>
+                        <Button Content="Delete" Command="{Binding DeleteRuleCommand}" 
+                                Style="{StaticResource DangerButton}"/>
+                        <Button Content="Up" Command="{Binding MoveUpCommand}" 
+                                Style="{StaticResource ActionButton}" Width="50"/>
+                        <Button Content="Down" Command="{Binding MoveDownCommand}" 
+                                Style="{StaticResource ActionButton}" Width="50"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- Rule Editor -->
+            <Border Grid.Column="1" Background="White" CornerRadius="8" 
+                    BorderBrush="#E0E0E0" BorderThickness="1" Padding="20">
+                <Grid>
+                    <!-- No selection / Not editing state -->
+                    <StackPanel x:Name="NoEditPanel">
+                        <StackPanel.Style>
+                            <Style TargetType="StackPanel">
+                                <Setter Property="Visibility" Value="Visible"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsEditing}" Value="True">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </StackPanel.Style>
+                        
+                        <TextBlock Text="Select a rule to edit or create a new one" 
+                                   Foreground="#888" FontStyle="Italic" 
+                                   HorizontalAlignment="Center" Margin="0,50,0,0"/>
+                        
+                        <Button Content="Edit Selected" Command="{Binding EditRuleCommand}"
+                                Style="{StaticResource ActionButton}" 
+                                HorizontalAlignment="Center" Margin="0,20,0,0"/>
+                        
+                        <!-- Rule Types Info -->
+                        <Border Background="#E3F2FD" CornerRadius="8" Padding="15" Margin="0,30,0,0">
+                            <StackPanel>
+                                <TextBlock Text="Rule Types" FontWeight="Bold" Foreground="#1565C0"/>
+                                <TextBlock TextWrapping="Wrap" Margin="0,10,0,0" Foreground="#555" FontSize="12">
+                                    <Run FontWeight="SemiBold">FileExtension:</Run>
+                                    <Run Text="Match by file extension (.pdf, .jpg)"/>
+                                    <LineBreak/>
+                                    <Run FontWeight="SemiBold">FileNamePattern:</Run>
+                                    <Run Text="Match by filename pattern"/>
+                                    <LineBreak/>
+                                    <Run FontWeight="SemiBold">GroupName:</Run>
+                                    <Run Text="Match by Telegram group name"/>
+                                    <LineBreak/>
+                                    <Run FontWeight="SemiBold">FileSize:</Run>
+                                    <Run Text="Match by file size (min-max in KB)"/>
+                                </TextBlock>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- Edit form -->
+                    <ScrollViewer x:Name="EditPanel" VerticalScrollBarVisibility="Auto"
+                                  Visibility="{Binding IsEditing, Converter={StaticResource BoolToVis}}">
+                        <StackPanel>
+                            <TextBlock Text="Rule Details" FontSize="16" FontWeight="Bold" Margin="0,0,0,20"/>
+
+                            <!-- Name -->
+                            <TextBlock Text="Name" FontWeight="SemiBold" Margin="0,0,0,5"/>
+                            <TextBox Text="{Binding EditName, UpdateSourceTrigger=PropertyChanged}" 
+                                     Padding="10" Margin="0,0,0,15"/>
+
+                            <!-- Description -->
+                            <TextBlock Text="Description" FontWeight="SemiBold" Margin="0,0,0,5"/>
+                            <TextBox Text="{Binding EditDescription, UpdateSourceTrigger=PropertyChanged}" 
+                                     Padding="10" Margin="0,0,0,15"/>
+
+                            <!-- Rule Type -->
+                            <TextBlock Text="Rule Type" FontWeight="SemiBold" Margin="0,0,0,5"/>
+                            <ComboBox ItemsSource="{Binding RuleTypes}" 
+                                      SelectedItem="{Binding EditRuleType}"
+                                      Padding="10" Margin="0,0,0,15"/>
+
+                            <!-- Pattern -->
+                            <TextBlock Text="Pattern" FontWeight="SemiBold" Margin="0,0,0,5"/>
+                            <TextBox Text="{Binding EditPattern, UpdateSourceTrigger=PropertyChanged}" 
+                                     Padding="10" Margin="0,0,0,5"/>
+                            <TextBlock Text="For multiple extensions: .pdf|.docx|.txt" 
+                                       Foreground="#888" FontSize="11" Margin="0,0,0,15"/>
+
+                            <!-- Match Type -->
+                            <TextBlock Text="Match Type" FontWeight="SemiBold" Margin="0,0,0,5"/>
+                            <ComboBox ItemsSource="{Binding MatchTypes}" 
+                                      SelectedItem="{Binding EditMatchType}"
+                                      Padding="10" Margin="0,0,0,15"/>
+
+                            <!-- Target Folder -->
+                            <TextBlock Text="Target Folder" FontWeight="SemiBold" Margin="0,0,0,5"/>
+                            <TextBox Text="{Binding EditTargetFolder, UpdateSourceTrigger=PropertyChanged}" 
+                                     Padding="10" Margin="0,0,0,5"/>
+                            <TextBlock Text="Relative to destination path (e.g., Documents, Images)" 
+                                       Foreground="#888" FontSize="11" Margin="0,0,0,15"/>
+
+                            <!-- Priority -->
+                            <TextBlock Text="Priority (higher = first)" FontWeight="SemiBold" Margin="0,0,0,5"/>
+                            <TextBox Text="{Binding EditPriority, UpdateSourceTrigger=PropertyChanged}" 
+                                     Padding="10" Margin="0,0,0,15" Width="100" HorizontalAlignment="Left"/>
+
+                            <!-- Enabled -->
+                            <CheckBox Content="Enabled" IsChecked="{Binding EditIsEnabled}" 
+                                      Margin="0,0,0,20"/>
+
+                            <!-- Actions -->
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                <Button Content="Cancel" Command="{Binding CancelEditCommand}"
+                                        Padding="20,10" Margin="0,0,10,0" Background="#E0E0E0" 
+                                        Foreground="#333" BorderThickness="0" Cursor="Hand"/>
+                                <Button Content="Save Rule" Command="{Binding SaveRuleCommand}"
+                                        Style="{StaticResource SuccessButton}" Padding="20,10"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- Footer -->
+        <Border Grid.Row="2" Background="White" BorderBrush="#E0E0E0" 
+                BorderThickness="0,1,0,0" Padding="20,15">
+            <Grid>
+                <TextBlock Text="Rules are applied in priority order. Higher priority rules are checked first."
+                           Foreground="#666" FontSize="12" VerticalAlignment="Center"/>
+                <Button Content="Close" HorizontalAlignment="Right" 
+                        Padding="20,8" Click="CloseButton_Click"
+                        Background="#666" Foreground="White" BorderThickness="0" Cursor="Hand"/>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>
