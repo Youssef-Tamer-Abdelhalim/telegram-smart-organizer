@@ -18,6 +18,7 @@ namespace TelegramOrganizer.Core.Services
         private readonly ILoggingService _logger;
         private readonly IDownloadSessionManager? _sessionManager; // Optional v2.0 feature
         private readonly IDownloadBurstDetector? _burstDetector; // V2.0: Burst detection
+        private readonly IBackgroundWindowMonitor? _windowMonitor; // V2.0: Background window monitoring
 
         private readonly ConcurrentDictionary<string, FileContext> _pendingDownloads = new();
         private readonly ConcurrentDictionary<string, DateTime> _processingFiles = new();
@@ -32,7 +33,8 @@ namespace TelegramOrganizer.Core.Services
             ISettingsService settingsService,
             ILoggingService loggingService,
             IDownloadSessionManager? sessionManager = null, // Optional for v2.0
-            IDownloadBurstDetector? burstDetector = null) // V2.0: Optional burst detector
+            IDownloadBurstDetector? burstDetector = null, // V2.0: Optional burst detector
+            IBackgroundWindowMonitor? windowMonitor = null) // V2.0: Optional window monitor
         {
             _watcher = watcher;
             _contextDetector = contextDetector;
@@ -42,6 +44,7 @@ namespace TelegramOrganizer.Core.Services
             _logger = loggingService;
             _sessionManager = sessionManager;
             _burstDetector = burstDetector;
+            _windowMonitor = windowMonitor;
 
             // V2.0: Subscribe to burst events if detector available
             if (_burstDetector != null)
@@ -49,6 +52,13 @@ namespace TelegramOrganizer.Core.Services
                 _burstDetector.BurstStarted += OnBurstStarted;
                 _burstDetector.BurstContinued += OnBurstContinued;
                 _burstDetector.BurstEnded += OnBurstEnded;
+            }
+
+            // V2.0: Subscribe to window monitor events
+            if (_windowMonitor != null)
+            {
+                _windowMonitor.WindowDetected += OnWindowDetected;
+                _windowMonitor.WindowActivated += OnWindowActivated;
             }
         }
 
@@ -65,6 +75,13 @@ namespace TelegramOrganizer.Core.Services
             {
                 OperationCompleted?.Invoke(this, "[ERROR] Invalid paths - Please check Settings");
                 return;
+            }
+
+            // V2.0: Start background window monitor
+            if (_windowMonitor != null)
+            {
+                _windowMonitor.Start();
+                _logger.LogInfo("[V2.0] Background window monitor started");
             }
 
             LoadPersistedState(settings.DownloadsFolderPath);
@@ -171,6 +188,14 @@ namespace TelegramOrganizer.Core.Services
         public void Stop()
         {
             _logger.LogInfo("Engine stopping...");
+            
+            // V2.0: Stop window monitor
+            if (_windowMonitor != null)
+            {
+                _windowMonitor.Stop();
+                _logger.LogInfo("[V2.0] Background window monitor stopped");
+            }
+            
             _watcher.Stop();
             _watcher.FileCreated -= OnFileCreated;
             _watcher.FileRenamed -= OnFileRenamed;
@@ -701,6 +726,22 @@ namespace TelegramOrganizer.Core.Services
         {
             _logger.LogInfo($"[Burst] ENDED: {e.FileCount} files in {e.DurationSeconds:F1}s (confidence: {e.Confidence:F2})");
             OperationCompleted?.Invoke(this, $"[BURST] Completed - {e.FileCount} files organized");
+        }
+
+        // ========================================
+        // V2.0: Window Monitor Event Handlers
+        // ========================================
+
+        private void OnWindowDetected(object? sender, WindowInfo e)
+        {
+            _logger.LogInfo($"[WindowMonitor] New window: {e.Title}");
+            OperationCompleted?.Invoke(this, $"[WINDOW] Detected: {e.Title}");
+        }
+
+        private void OnWindowActivated(object? sender, WindowInfo e)
+        {
+            _logger.LogDebug($"[WindowMonitor] Window activated: {e.Title}");
+            OperationCompleted?.Invoke(this, $"[WINDOW] Active: {e.Title}");
         }
     }
 }

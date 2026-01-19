@@ -103,5 +103,36 @@ namespace TelegramOrganizer.Core.Models
         /// Default: true
         /// </summary>
         public bool EnableBurstDetection { get; set; } = true;
+
+        // ========================================
+        // V2.0: Background Window Monitoring Settings
+        // ========================================
+
+        /// <summary>
+        /// V2.0: Whether to enable background window monitoring.
+        /// When enabled, tracks Telegram windows even when not active.
+        /// Default: true
+        /// </summary>
+        public bool EnableBackgroundMonitoring { get; set; } = true;
+
+        /// <summary>
+        /// V2.0: How often to scan for windows in milliseconds.
+        /// Lower values = more responsive but more CPU usage.
+        /// Default: 2000ms (2 seconds)
+        /// </summary>
+        public int WindowScanIntervalMs { get; set; } = 2000;
+
+        /// <summary>
+        /// V2.0: Maximum number of windows to track in background.
+        /// Older windows are evicted when limit is reached.
+        /// Default: 20 windows
+        /// </summary>
+        public int MaxTrackedWindows { get; set; } = 20;
+
+        /// <summary>
+        /// V2.0: How long to keep window information (in seconds) before cleanup.
+        /// Default: 300 seconds (5 minutes)
+        /// </summary>
+        public int WindowCacheTimeoutSeconds { get; set; } = 300;
     }
 }

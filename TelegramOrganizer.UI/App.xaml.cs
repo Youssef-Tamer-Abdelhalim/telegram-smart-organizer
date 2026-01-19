@@ -65,6 +65,9 @@ namespace TelegramOrganizer.UI
             // V2.0: Download Burst Detector
             services.AddSingleton<IDownloadBurstDetector, DownloadBurstDetector>();
             
+            // V2.0: Background Window Monitor
+            services.AddSingleton<IBackgroundWindowMonitor, BackgroundWindowMonitor>();
+            
             // Main Engine - depends on all above services
             services.AddSingleton<SmartOrganizerEngine>();
 
