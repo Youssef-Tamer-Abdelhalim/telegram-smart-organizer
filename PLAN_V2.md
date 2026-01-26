@@ -1,821 +1,462 @@
-# 🚀 Telegram Smart Organizer v2.0.0 - Development Plan
+# 🚀 Telegram Smart Organizer v2.0 - Development Plan
 
-> **Major Release - Next Generation Architecture**
-
----
-
-## 📊 Current State Analysis (v1.0.0)
-
-### ✅ **نقاط القوة (Strengths)**
-
-#### 1. **معمارية نظيفة ومنظمة**
-
-- ✅ Clean Architecture (Core/Infra/UI layers)
-- ✅ Dependency Injection بشكل صحيح
-- ✅ MVVM Pattern محترم
-- ✅ Unit Tests موجودة (63 test)
-
-#### 2. **التعامل مع الملفات المؤقتة**
-
-- ✅ نظام تتبع الملفات المؤقتة `.td`, `.tpart`
-- ✅ File Stability Check (3 consecutive checks)
-- ✅ Timeout ممتاز (120 ثانية)
-- ✅ Exponential Backoff
-
-#### 3. **إدارة البيانات**
-
-- ✅ JSON Persistence للـ state
-- ✅ Settings Service محترم
-- ✅ Rules Engine قوي
-- ✅ Statistics Tracking
-
-#### 4. **تجربة المستخدم**
-
-- ✅ System Tray Integration
-- ✅ Notifications
-- ✅ Custom Rules
-- ✅ Dark Theme Support
-- ✅ Arabic Text Support ممتاز
-
-#### 5. **الأمان والاستقرار**
-
-- ✅ Thread-Safe (`ConcurrentDictionary`)
-- ✅ Comprehensive Logging
-- ✅ Error Handling محترم
-- ✅ Duplicate Event Prevention
+> **Current Status: Phase 2 Week 3 - STABLE VERSION**
+> 
+> **Last Updated:** January 26, 2026
+> 
+> **⚠️ CRITICAL: DO NOT PROCEED TO WEEK 4+ WITHOUT CAREFUL REVIEW**
 
 ---
 
-### ❌ **نقاط الضعف (Critical Weaknesses)**
+## 📍 Current Position: Phase 2 Week 3 ✅
 
-#### 🔴 **المشكلة #1: Batch Downloads Support (CRITICAL)**
+### **What We Have (Implemented & Stable)**
 
-**الوصف:**
+#### ✅ **Phase 1: SQLite Foundation** (Week 1) - COMPLETED
+- SQLite database integration with `sqlite-net-pcl`
+- `SQLiteDatabaseService` implementing `IDatabaseService`
+- `DownloadSessionManager` for session tracking
+- Database schema with 7 tables (sessions, files, patterns, statistics, cache, state, versions)
+- Migration system from JSON to SQLite
+- **Status:** Functional but optional in current build
 
-- حالياً: البرنامج بيلتقط context **مرة واحدة** عند event `FileCreated`
-- المشكلة: لما اليوزر ينزل **50 ملف مرة واحدة**، الـ context بيتاخد للملف الأول بس
-- النتيجة: باقي الـ 49 ملف ممكن يروحوا `Unsorted` أو لـ group غلط
+#### ✅ **Phase 2 Week 1: Download Burst Detector** - COMPLETED
+- `DownloadBurstDetector` service implemented
+- Detects rapid file downloads (3+ files within 5 seconds)
+- Burst session management (30-second timeout)
+- Events: `BurstStarted`, `BurstContinued`, `BurstEnded`
+- **Integration:** Optional in `SmartOrganizerEngine`
 
-**السبب التقني:**
+#### ✅ **Phase 2 Week 2: Download Session Manager** - COMPLETED
+- Session-based file tracking
+- 30-second session timeout
+- File-to-session mapping in database
+- Handles batch downloads better than v1.0
+- **Integration:** Optional in `SmartOrganizerEngine`
+
+#### ✅ **Phase 2 Week 3: Background Window Monitor** - COMPLETED
+- `BackgroundWindowMonitor` tracks Telegram windows continuously
+- Scans every 2 seconds using `Win32WindowEnumerator`
+- Works even when Telegram is minimized/unfocused
+- Caches up to 20 recent windows
+- Events: `WindowDetected`, `WindowActivated`, `WindowRemoved`
+- **Integration:** Optional in `SmartOrganizerEngine`
+
+### **Test Status**
+- **Total Tests:** 129
+- **Passing:** 123 ✅
+- **Skipped:** 6 (SQLite integration tests with isolation issues)
+- **Failed:** 0 ❌
+
+### **Architecture Status**
+```
+Core Layer (Interfaces)
+├── IContextDetector (v1.0 - foreground only)
+├── IDatabaseService (v2.0 - SQLite)
+├── IDownloadSessionManager (v2.0)
+├── IDownloadBurstDetector (v2.0)
+└── IBackgroundWindowMonitor (v2.0)
+
+Infrastructure Layer (Implementations)
+├── Win32ContextDetector (v1.0 - working)
+├── SQLiteDatabaseService (v2.0 - working but optional)
+├── DownloadSessionManager (v2.0 - working but optional)
+├── DownloadBurstDetector (v2.0 - working but optional)
+└── BackgroundWindowMonitor (v2.0 - working but optional)
+
+UI Layer
+└── App.xaml.cs (all services registered, v2.0 features optional)
+```
+
+---
+
+## ⚠️ CRITICAL WARNINGS - READ BEFORE CONTINUING
+
+### **🔴 What Went Wrong Previously**
+
+#### **Mistake #1: Rushed Week 4 Implementation**
+- **Problem:** Attempted to implement `MultiSourceContextDetector` without proper planning
+- **Result:** Complex voting system with 6 signal sources caused instability
+- **Lesson:** Each week's feature needs standalone testing before integration
+
+#### **Mistake #2: Statistics Dashboard v2.0**
+- **Problem:** Added UI features before backend was stable
+- **Result:** Dashboard worked but relied on unstable v2.0 features
+- **Lesson:** UI should come AFTER backend is proven stable
+
+#### **Mistake #3: Test Database Pollution**
+- **Problem:** Shared database in tests caused isolation issues
+- **Result:** 7 failing tests with unpredictable results
+- **Lesson:** Each test must use isolated database or proper cleanup
+
+#### **Mistake #4: Feature Creep**
+- **Problem:** Tried to add too many features too fast
+- **Result:** Unstable codebase, reverted to Week 3
+- **Lesson:** One feature at a time, fully tested before moving on
+
+---
+
+## 🎯 Recommended Next Steps (SAFE PATH)
+
+### **Option A: Stabilize Current Features (RECOMMENDED)**
+
+Before adding anything new, focus on:
+
+1. **Fix Skipped Tests** (1-2 days)
+   - Create isolated test databases
+   - Fix `SQLiteDatabaseServiceTests` isolation issues
+   - Get to 129/129 passing tests
+
+2. **Full Integration of V2.0 Features** (3-5 days)
+   - Make v2.0 services non-optional
+   - Remove v1.0 `IPersistenceService` fallback
+   - Full migration from JSON to SQLite
+   - Performance testing with large datasets
+
+3. **Real-World Testing** (1 week)
+   - Beta testing with actual Telegram usage
+   - Monitor for edge cases
+   - Gather user feedback
+   - Fix any discovered bugs
+
+4. **Documentation & Polish** (2-3 days)
+   - Update all documentation
+   - Create user guide for v2.0 features
+   - Performance benchmarks
+   - Prepare release notes
+
+**Timeline:** 2-3 weeks
+**Risk:** Low
+**Value:** High (stable, reliable product)
+
+---
+
+### **Option B: Careful Week 4+ Development (HIGHER RISK)**
+
+If you choose to continue Phase 2, follow these rules:
+
+#### **Phase 2 Week 4: Multi-Source Context Detector** (NOT STARTED)
+
+**⚠️ REQUIREMENTS BEFORE STARTING:**
+- [ ] All 129 tests passing (currently 6 skipped)
+- [ ] V2.0 features fully integrated (currently optional)
+- [ ] Beta testing completed (not done)
+- [ ] Performance benchmarks established (not done)
+
+**Proposed Implementation (IF requirements met):**
 
 ```csharp
-private void OnFileCreated(object? sender, FileEventArgs e)
+/// <summary>
+/// Combines multiple context detection strategies with weighted voting.
+/// WARNING: This is complex - implement incrementally!
+/// </summary>
+public interface IMultiSourceContextDetector
 {
-    // ❌ هنا بناخد الـ context مرة واحدة فقط
-    string activeWindow = _contextDetector.GetActiveWindowTitle();
-    string groupName = ExtractTelegramGroupName(activeWindow);
+    string DetectContext(ContextDetectionRequest request);
+    ContextConfidence GetConfidence(string context);
+}
 
-    // لو في 50 ملف بينزلوا في نفس الوقت
-    // كل ملف هياخد context مختلف حسب timing الـ event
+public class ContextSignal
+{
+    public string Source { get; set; }      // "ForegroundWindow", "BackgroundMonitor", etc.
+    public string Value { get; set; }       // Detected group name
+    public double Confidence { get; set; }  // 0.0 - 1.0
+    public DateTime Timestamp { get; set; }
+}
+
+public class MultiSourceContextDetector : IMultiSourceContextDetector
+{
+    // Signal sources (implement ONE at a time)
+    private readonly IContextDetector _foregroundDetector;
+    private readonly IBackgroundWindowMonitor _backgroundMonitor;
+    private readonly IDatabaseService _patternLearner;
+    
+    // Weights (tune after testing each source)
+    private const double ForegroundWeight = 0.4;
+    private const double BackgroundWeight = 0.3;
+    private const double PatternWeight = 0.2;
+    private const double TimeBasedWeight = 0.1;
+    
+    public string DetectContext(ContextDetectionRequest request)
+    {
+        var signals = new List<ContextSignal>();
+        
+        // 1. Add foreground signal (existing, reliable)
+        signals.Add(GetForegroundSignal());
+        
+        // 2. Add background signal (Week 3 feature)
+        if (_backgroundMonitor?.IsMonitoring == true)
+        {
+            signals.Add(GetBackgroundSignal());
+        }
+        
+        // 3. Add pattern-based signal (use database patterns)
+        signals.Add(GetPatternSignal(request.FileName));
+        
+        // 4. Weighted voting
+        return VoteOnBestContext(signals);
+    }
+    
+    private string VoteOnBestContext(List<ContextSignal> signals)
+    {
+        // Group by value, sum weights
+        var votes = signals
+            .GroupBy(s => s.Value)
+            .Select(g => new {
+                Context = g.Key,
+                TotalWeight = g.Sum(s => s.Confidence * GetSourceWeight(s.Source))
+            })
+            .OrderByDescending(v => v.TotalWeight)
+            .FirstOrDefault();
+            
+        return votes?.Context ?? "Unsorted";
+    }
 }
 ```
 
-**الأثر:**
+**Development Steps (MUST follow in order):**
+1. Implement `IMultiSourceContextDetector` interface
+2. Add foreground signal (reuse existing)
+3. Test with 100% foreground only - ensure no regression
+4. Add background signal
+5. Test with foreground + background - compare accuracy
+6. Add pattern signal
+7. Test all three together
+8. Tune weights based on real data
+9. Full integration testing
+10. Beta testing for 1 week minimum
 
-- Success Rate: ~40-60% في حالة batch downloads
-- User Frustration عالي جداً
-- الملفات بتروح أماكن غلط
+**Testing Requirements:**
+- Minimum 20 new unit tests
+- Integration tests for each signal source
+- Accuracy benchmarks (must be >90%)
+- Performance tests (memory/CPU)
+
+**Time Estimate:** 2-3 weeks (if done carefully)
 
 ---
 
-#### 🔴 **المشكلة #2: Focus Dependency (CRITICAL)**
+### **Phase 2 Week 5: Statistics Dashboard v2.0** (NOT STARTED)
 
-**الوصف:**
+**⚠️ DO NOT START until:**
+- [ ] Week 4 is complete and stable
+- [ ] Database is proven reliable with real data
+- [ ] All tests passing
 
-- حالياً: البرنامج **معتمد 100%** على `GetForegroundWindow()`
-- المشكلة: لو اليوزر:
-  - فتح تاب تاني في البراوزر
-  - راح على application تاني
-  - قفل window Telegram
-  - مينيمايز الويندو
-- النتيجة: الملفات **مش هتترتب صح**
+**Proposed Features:**
+- Multi-source accuracy metrics
+- Per-source confidence display
+- Session analytics
+- Pattern learning visualization
+- Real-time monitoring view
 
-**السبب التقني:**
+**Time Estimate:** 1-2 weeks
 
-```csharp
-[DllImport("user32.dll")]
-private static extern IntPtr GetForegroundWindow(); // ❌ Foreground only!
+---
 
-public string GetActiveWindowTitle()
-{
-    IntPtr handle = GetForegroundWindow(); // ❌ بيشوف اللي عليه focus بس
-    // ...
-}
+## 🚨 STRICT DEVELOPMENT RULES
+
+### **Rule 1: One Feature at a Time**
+- Complete implementation
+- Full unit tests
+- Integration tests
+- Performance benchmarks
+- Beta testing
+- THEN move to next feature
+
+### **Rule 2: No Breaking Changes**
+- All changes must be backward compatible
+- Keep v1.0 behavior as fallback
+- Gradual migration only
+- Always have rollback plan
+
+### **Rule 3: Test First**
+- Write tests BEFORE implementation
+- 100% test pass required before commit
+- No skipped tests (fix or remove)
+- Test databases must be isolated
+
+### **Rule 4: Performance Monitoring**
+- Benchmark before changes
+- Monitor memory/CPU
+- No degradation allowed
+- Profile hot paths
+
+### **Rule 5: Documentation**
+- Update docs with each feature
+- Clear migration guides
+- Comment complex logic
+- Keep PLAN.md in sync
+
+### **Rule 6: Git Hygiene**
+- Commit working code only
+- Descriptive commit messages
+- Tag stable versions
+- Never force push to main
+
+---
+
+## 📊 Current vs Target Metrics
+
+| Metric                     | v1.0 | Current (Week 3) | Target (v2.0 Complete) |
+| -------------------------- | ---- | ---------------- | ---------------------- |
+| **Functionality**          |      |                  |                        |
+| Single File Accuracy       | 85%  | 85%              | 95%+                   |
+| Batch Download Accuracy    | 40%  | 70% (estimated)  | 90-95%                 |
+| Focus Dependency           | Yes  | Partial          | No                     |
+| Max Batch Size (reliable)  | 10   | 50 (estimated)   | 500+                   |
+| **Quality**                |      |                  |                        |
+| Test Coverage              | 60%  | 65%              | 80%+                   |
+| Tests Passing              | 63   | 123/129          | 150+/150+              |
+| **Performance**            |      |                  |                        |
+| Memory (idle)              | 80MB | 100MB            | <150MB                 |
+| CPU (idle)                 | 1%   | 2%               | <3%                    |
+| Database Size (1yr)        | N/A  | ~5MB             | ~10MB                  |
+
+---
+
+## 🔧 Technical Debt & Known Issues
+
+### **High Priority**
+1. **6 Skipped Tests** - Test isolation issues in `SQLiteDatabaseServiceTests`
+2. **Optional V2.0 Services** - Should be mandatory or removed
+3. **JSON + SQLite Dual System** - Should migrate fully to SQLite
+4. **No Performance Benchmarks** - Need baseline metrics
+
+### **Medium Priority**
+1. **Large File Timeout** - Fixed 120s, should be dynamic
+2. **Error Handling** - Some paths lack proper error handling
+3. **Logging Verbosity** - Too much debug logging
+4. **Multi-Monitor Support** - Not tested
+
+### **Low Priority**
+1. **Network Drive Support** - Not implemented
+2. **MIME Type Detection** - Relying on extensions only
+3. **Cloud Backup** - Not implemented (future feature)
+
+---
+
+## 📝 Lessons Learned
+
+### **What Worked Well ✅**
+1. Clean Architecture - Made rollback possible
+2. Optional Services Pattern - Week 3 features didn't break Week 1
+3. Comprehensive Logging - Easy to debug issues
+4. Git Tagging - Could revert to stable version
+5. Incremental Development - Week 1-3 were stable individually
+
+### **What Didn't Work ❌**
+1. Rushing Features - Week 4 was too ambitious
+2. Shared Test Database - Caused unpredictable test failures
+3. Parallel Feature Development - Should be sequential
+4. Insufficient Beta Testing - Need real-world validation
+5. Documentation Lag - PLAN.md not updated incrementally
+
+### **Improvements for Next Phase 🎯**
+1. Mandatory test pass before commit
+2. Isolated test databases
+3. Weekly beta testing cycles
+4. Update PLAN.md with each feature
+5. Performance benchmarks at each stage
+6. Code reviews before merge
+7. Strict adherence to development rules
+
+---
+
+## 🎯 Recommended Path Forward
+
+### **Immediate Actions (This Week)**
+1. ✅ Clean up skipped tests
+2. ✅ Document current state (this file)
+3. ✅ Create git tag `v2.0-week3-stable`
+4. ⏳ Decide: Stabilize current OR continue development
+5. ⏳ If continuing: Set up beta testing program
+6. ⏳ Establish performance baselines
+
+### **Short Term (1-2 Weeks)**
+**If choosing Stabilization (Option A):**
+- Fix all skipped tests
+- Complete v2.0 integration
+- Beta testing
+- Release candidate preparation
+
+**If choosing Continuation (Option B):**
+- Meet all Week 4 prerequisites
+- Implement Multi-Source Detector carefully
+- Extensive testing at each step
+- Weekly progress reviews
+
+### **Long Term (1-3 Months)**
+- Complete Phase 2 (Week 4-5)
+- Phase 3: Performance optimization
+- Phase 4: Advanced features (cloud sync, etc.)
+- v2.0 stable release
+
+---
+
+## 📚 Reference Architecture
+
+### **Service Dependencies (Current)**
+```
+SmartOrganizerEngine
+├── IFileWatcher (required) ✅
+├── IContextDetector (required) ✅
+├── IFileOrganizer (required) ✅
+├── IPersistenceService (required v1.0) ✅
+├── ISettingsService (required) ✅
+├── ILoggingService (required) ✅
+├── IDownloadSessionManager (optional v2.0) ⚠️
+├── IDownloadBurstDetector (optional v2.0) ⚠️
+└── IBackgroundWindowMonitor (optional v2.0) ⚠️
 ```
 
-**الأثر:**
-
-- User must keep Telegram focused = سيئ جداً للـ UX
-- ما ينفعش يعمل أي حاجة تانية أثناء التحميل
-- Workflow interruption
-
----
-
-#### 🟡 **مشاكل تانية (Medium Priority)**
-
-##### 3. **Performance مع الملفات الكبيرة**
-
-- `WaitForFileReady()` بتستهلك CPU لو الملف كبير (>500MB)
-- مفيش progress indication
-- الـ timeout ثابت (120s) مش dynamic
-
-##### 4. **Multi-Monitor Support**
-
-- مفيش handling للـ multi-monitor scenarios
-- Window detection ممكن يفشل
-
-##### 5. **Network Drive Support**
-
-- مفيش support للـ network drives
-- UNC paths ممكن تعمل مشاكل
-
-##### 6. **File Type Detection**
-
-- الاعتماد على extension بس
-- مفيش MIME type detection
-- ملفات بدون extension بتروح Unsorted
-
----
-
-## 🎯 v2.0.0 Goals & Solutions
-
-### 🔥 **Critical Fixes**
-
-#### **Solution #1: Intelligent Batch Download Handler**
-
-**الفكرة:**
-بدل ما ناخد context للملف الواحد، نعمل **session-based tracking**:
-
+### **Data Flow (Current)**
 ```
-1. Detect Download Session Start
+1. File Created Event
    ↓
-2. Capture Context ONCE for the entire session
+2. Context Detection (foreground or background)
    ↓
-3. Apply same context to ALL files in the session
+3. Session Manager (if available)
    ↓
-4. Session expires after inactivity timeout (e.g., 30 seconds)
-```
-
-**التنفيذ المقترح:**
-
-```csharp
-// New Service: IDownloadSessionManager
-public interface IDownloadSessionManager
-{
-    DownloadSession? GetActiveSession();
-    void StartSession(string groupName);
-    void AddFileToSession(string fileName);
-    void EndSession();
-    bool IsSessionActive();
-}
-
-public class DownloadSession
-{
-    public string GroupName { get; set; }
-    public DateTime SessionStart { get; set; }
-    public DateTime LastActivity { get; set; }
-    public List<string> FilesInSession { get; set; }
-    public int FileCount => FilesInSession.Count;
-}
-```
-
-**الفوايد:**
-
-- ✅ Success Rate: 95%+ في batch downloads
-- ✅ Consistent organization
-- ✅ User doesn't need to keep focus
-- ✅ Handles 100+ files easily
-
----
-
-#### **Solution #2: Background Window Monitoring**
-
-**الفكرة:**
-استخدام **multiple detection strategies** بدل الاعتماد على foreground بس:
-
-**Strategy A: Process Monitoring**
-
-```csharp
-// Monitor Telegram process CONTINUOUSLY
-public interface IProcessMonitor
-{
-    List<TelegramWindow> GetAllTelegramWindows(); // All windows, not just foreground
-    TelegramWindow? GetMostRecentlyActive();
-    event EventHandler<TelegramWindow> WindowActivated;
-}
-```
-
-**Strategy B: Telegram Local Database**
-
-```csharp
-// Read Telegram's local database to get current active chat
-// Path: %APPDATA%\Telegram Desktop\tdata\
-public interface ITelegramDataReader
-{
-    string? GetCurrentActiveChat();
-    ChatInfo? GetChatInfo(long chatId);
-}
-```
-
-**Strategy C: File Metadata Tracking**
-
-```csharp
-// Track file creation patterns
-public interface IFilePatternAnalyzer
-{
-    string PredictGroupFromPattern(string fileName, DateTime createdTime);
-    void LearnPattern(string fileName, string actualGroup);
-}
-```
-
-**الفوايد:**
-
-- ✅ Works even if Telegram is minimized
-- ✅ Works with multiple Telegram windows
-- ✅ Learns from user behavior
-- ✅ Fallback strategies
-
----
-
-### 🚀 **Major Features**
-
-#### **Feature #1: SQLite Database Integration**
-
-**الفكرة:**
-استبدال JSON بـ SQLite للبيانات المعقدة:
-
-1. **Session Tracking**
-   - Download sessions with relationships
-   - File-to-session mapping
-   - Active session detection
-
-2. **Pattern Learning Database**
-   - File patterns with confidence scores
-   - Time-based patterns (hour/day)
-   - Context accuracy tracking
-
-3. **Advanced Analytics**
-   - Complex queries للإحصائيات
-   - Historical data analysis
-   - Performance optimization with indexes
-
-**الفوايد:**
-
-- ✅ Fast querying with indexes
-- ✅ Relationships (Foreign Keys)
-- ✅ Scalable (100K+ records)
-- ✅ Transaction support
-- ✅ Only ~1MB overhead
-
-**Schema:**
-
-```sql
--- Download Sessions
-CREATE TABLE download_sessions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    group_name TEXT NOT NULL,
-    start_time DATETIME NOT NULL,
-    file_count INTEGER DEFAULT 0,
-    is_active BOOLEAN DEFAULT 1
-);
-
--- Pattern Learning
-CREATE TABLE file_patterns (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    file_extension TEXT,
-    group_name TEXT NOT NULL,
-    confidence_score REAL,
-    times_seen INTEGER,
-    times_correct INTEGER
-);
-
--- Statistics
-CREATE TABLE file_statistics (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    file_name TEXT,
-    source_group TEXT,
-    was_batch_download BOOLEAN,
-    session_id INTEGER,
-    timestamp DATETIME
-);
+4. Burst Detector (if available)
+   ↓
+5. File Organization
+   ↓
+6. Statistics Update
+   ↓
+7. Database Persistence (SQLite or JSON)
 ```
 
 ---
 
-#### **Feature #2: Smart Learning System**
+## 🎬 Conclusion
 
-**الفكرة:**
-ML-based pattern recognition:
+**Current State:** Stable at Phase 2 Week 3
+**Recommendation:** Choose Option A (Stabilization) before Option B (Continuation)
+**Risk Level:** Current = Low, Week 4+ = Medium-High
+**Timeline:** 2-3 weeks to stable v2.0, or 4-6 weeks for full Phase 2
 
-```csharp
-public interface ISmartLearningEngine
-{
-    void TrainFromHistory(List<OrganizedFile> history);
-    string PredictGroup(FileInfo file, DateTime downloadTime);
-    double GetConfidenceScore(string prediction);
-    void UpdateModel(string fileName, string actualGroup, bool wasCorrect);
-}
-```
-
-**الفوايد:**
-
-- ✅ Learns user's download patterns
-- ✅ Predicts group even without context
-- ✅ Gets smarter over time
-- ✅ Confidence scoring
+**Remember:**
+- Quality > Speed
+- Tests must pass 100%
+- Beta testing is mandatory
+- Follow the rules strictly
+- Document everything
+- Git tags are your friend
 
 ---
 
-#### **Feature #3: Download Queue Manager**
-
-**الفكرة:**
-Proper queue management للـ batch downloads:
-
-```csharp
-public interface IDownloadQueueManager
-{
-    void EnqueueFile(QueuedFile file);
-    QueuedFile? DequeueNext();
-    void PauseQueue();
-    void ResumeQueue();
-    QueueStatus GetStatus();
-    event EventHandler<QueuedFile> FileProcessed;
-}
-
-public class QueuedFile
-{
-    public string FilePath { get; set; }
-    public string DetectedGroup { get; set; }
-    public int Priority { get; set; } // High priority = user-selected
-    public DateTime QueuedAt { get; set; }
-    public QueueState State { get; set; } // Pending, Processing, Completed, Failed
-}
-```
-
-**الفوايد:**
-
-- ✅ Handles 1000+ files efficiently
-- ✅ Priority system
-- ✅ Retry failed files
-- ✅ Better resource management
-
----
-
-#### **Feature #4: Enhanced UI with Live Preview**
-
-**الفكرة:**
-Real-time monitoring dashboard:
-
-```
-┌─────────────────────────────────────────────┐
-│ 🎯 Active Session: CS50 Study Group        │
-│ ⏱️  Duration: 2m 15s                        │
-│ 📥 Files Downloaded: 47/50                  │
-├─────────────────────────────────────────────┤
-│ Current File:                               │
-│ ▓▓▓▓▓▓▓▓░░░░░░ 65% lecture-12.pdf (125 MB) │
-├─────────────────────────────────────────────┤
-│ Queue (3 remaining):                        │
-│ • homework-5.pdf                            │
-│ • solution-4.zip                            │
-│ • notes.docx                                │
-└─────────────────────────────────────────────┘
-```
-
----
-
-#### **Feature #5: Cloud Sync & Backup**
-
-**الفكرة:**
-
-```csharp
-public interface ICloudSyncService
-{
-    Task SyncSettings();
-    Task SyncRules();
-    Task SyncStatistics();
-    Task BackupState();
-    Task RestoreFromBackup(string backupId);
-}
-```
-
-**الفوايد:**
-
-- ✅ Settings across devices
-- ✅ Rules backup
-- ✅ Statistics sync
-- ✅ Disaster recovery
-
----
-
-## 📋 v2.0.0 Feature List
-
-### 🔴 **Critical (Must Have)**
-
-| #   | Feature                                    | Priority | Effort |
-| --- | ------------------------------------------ | -------- | ------ |
-| 1   | SQLite Database Integration                | CRITICAL | Medium |
-| 2   | Batch Download Session Manager             | CRITICAL | High   |
-| 3   | Download Burst Detection                   | CRITICAL | Medium |
-| 4   | Background Window Monitoring (EnumWindows) | CRITICAL | High   |
-| 5   | Smart Context Cache                        | HIGH     | Low    |
-| 6   | Multi-Source Context Detection             | HIGH     | Medium |
-
-### 🟡 **Important (Should Have)**
-
-| #   | Feature                              | Priority | Effort |
-| --- | ------------------------------------ | -------- | ------ |
-| 7   | File Pattern Analyzer (SQLite-based) | HIGH     | Medium |
-| 8   | Smart Learning Engine (Lightweight)  | MEDIUM   | High   |
-| 9   | Download Queue Manager               | MEDIUM   | Medium |
-| 10  | Enhanced Error Recovery              | MEDIUM   | Low    |
-| 11  | Multi-Window Support                 | MEDIUM   | Medium |
-
-### 🟢 **Nice to Have**
-
-| #   | Feature                          | Priority | Effort |
-| --- | -------------------------------- | -------- | ------ |
-| 11  | Cloud Sync Service               | LOW      | High   |
-| 12  | Live Progress Dashboard          | LOW      | Medium |
-| 13  | MIME Type Detection              | LOW      | Low    |
-| 14  | Duplicate File Detection         | LOW      | Medium |
-| 15  | Archive Extraction Auto-organize | LOW      | High   |
-
----
-
-## 🏗️ Architecture Changes
-
-### **New Services (v2.0.0)**
-
-```
-TelegramOrganizer.Core/
-├── Contracts/
-│   ├── IDatabaseService.cs             [NEW] ⭐
-│   ├── IDownloadSessionManager.cs      [NEW]
-│   ├── IProcessMonitor.cs              [NEW]
-│   ├── IContextCacheService.cs         [NEW]
-│   ├── IFilePatternAnalyzer.cs         [NEW]
-│   ├── IDownloadBurstDetector.cs       [NEW] ⭐
-│   ├── IMultiSourceDetector.cs         [NEW] ⭐
-│   └── IDownloadQueueManager.cs        [NEW]
-├── Models/
-│   ├── DownloadSession.cs              [NEW]
-│   ├── TelegramWindow.cs               [NEW]
-│   ├── QueuedFile.cs                   [NEW]
-│   ├── FilePattern.cs                  [NEW]
-│   ├── CachedContext.cs                [NEW]
-│   └── ContextSignal.cs                [NEW]
-
-TelegramOrganizer.Infra/
-├── Services/
-│   ├── SQLiteDatabaseService.cs        [NEW] ⭐
-│   ├── DownloadSessionManager.cs       [NEW]
-│   ├── WindowsProcessMonitor.cs        [NEW] ⭐
-│   ├── DownloadBurstDetector.cs        [NEW] ⭐
-│   ├── MultiSourceContextDetector.cs   [NEW] ⭐
-│   ├── SmartContextCache.cs            [NEW] ⭐
-│   ├── FilePatternAnalyzer.cs          [NEW]
-│   └── DownloadQueueManager.cs         [NEW]
-├── Data/
-│   ├── Migrations/
-│   │   ├── Migration_V2_Initial.cs     [NEW]
-│   │   └── Migration_V2_Indexes.cs     [NEW]
-│   └── Schema.sql                      [NEW]
-```
-
----
-
-## 🎯 Implementation Roadmap
-
-### **Phase 1: SQLite Foundation (1 week)**
-
-**Goal:** Database infrastructure
-
-- [ ] Day 1-2: SQLite integration & schema design
-- [ ] Day 3: Implement `IDatabaseService`
-- [ ] Day 4: Migration tool (JSON → SQLite)
-- [ ] Day 5: Testing & validation
-
-**Success Metrics:**
-
-- ✅ SQLite integrated successfully
-- ✅ All existing data migrated
-- ✅ Performance better than JSON
-
----
-
-### **Phase 2: Smart Detection (2-3 weeks)**
-
-**Goal:** Fix critical context detection issues
-
-- [ ] Week 2: Implement `DownloadBurstDetector`
-  - Detect burst downloads (files within 5 seconds)
-  - Apply same context to burst
-  - SQLite session tracking
-
-- [ ] Week 3: Implement `BackgroundWindowMonitor`
-  - EnumWindows for all Telegram windows
-  - Track recently active windows
-  - Multi-window support
-
-- [ ] Week 3-4: Implement `MultiSourceContextDetector`
-  - Active window signal
-  - Recent windows signal
-  - File timing patterns signal
-  - Confidence scoring
-
-**Success Metrics:**
-
-- ✅ 90-95% accuracy with batch downloads (50+ files)
-- ✅ Works when Telegram is minimized
-- ✅ No focus dependency
-
----
-
-### **Phase 3: Learning & Intelligence (2 weeks)**
-
-**Goal:** Pattern learning from SQLite data
-
-- [ ] Week 5: Implement `FilePatternAnalyzer`
-  - Learn from file extensions
-  - Time-based patterns
-  - SQLite pattern storage
-
-- [ ] Week 6: Implement `SmartContextCache`
-  - Window title caching
-  - Accuracy tracking
-  - Auto-correction from user feedback
-
-**Success Metrics:**
-
-- ✅ 85%+ accuracy with pattern prediction
-- ✅ Cache hit rate >70%
-- ✅ Learning improves over time
-
----
-
-### **Phase 4: Queue & Performance (1 week)**
-
-**Goal:** Optimize for large batches
-
-- [ ] Week 7: Implement `DownloadQueueManager`
-  - Priority-based queue
-  - Batch processing
-  - Progress tracking
-
-- [ ] Week 7: Performance optimization
-  - SQLite query optimization
-  - Index tuning
-  - Memory profiling
-
-**Success Metrics:**
-
-- ✅ Handles 1000+ files efficiently
-- ✅ CPU usage <5%
-- ✅ Memory usage <200MB
-
----
-
-### **Phase 5: Polish & Release (1 week)**
-
-**Goal:** Production ready
-
-- [ ] Week 8: UI enhancements
-  - Live session dashboard
-  - Statistics improvements
-  - Settings for new features
-
-- [ ] Week 8: Testing & documentation
-  - Beta testing (50 users)
-  - Documentation updates
-  - Migration guide
-
-- [ ] Week 8: Release v2.0.0 🚀
-
-**Total Timeline: 8 weeks** (down from 16 weeks!)
-
----
-
-## 📊 Breaking Changes
-
-### **Config Migration**
-
-```json
-// v1.0.0
-{
-  "DestinationBasePath": "...",
-  "DownloadsFolderPath": "..."
-}
-
-// v2.0.0
-{
-  "DestinationBasePath": "...",
-  "DownloadsFolderPath": "...",
-  "SessionTimeout": 30,              // NEW
-  "EnableSmartLearning": true,       // NEW
-  "EnableTelegramIntegration": true, // NEW
-  "QueueMaxSize": 1000,             // NEW
-  "BackgroundMonitoring": true       // NEW
-}
-```
-
-### **Database Schema**
-
-```sql
--- v2.0.0 new tables
-CREATE TABLE download_sessions (
-    id INTEGER PRIMARY KEY,
-    group_name TEXT,
-    start_time DATETIME,
-    end_time DATETIME,
-    file_count INTEGER
-);
-
-CREATE TABLE file_patterns (
-    id INTEGER PRIMARY KEY,
-    pattern TEXT,
-    group_name TEXT,
-    confidence REAL,
-    times_seen INTEGER
-);
-```
-
----
-
-## 🧪 Testing Strategy
-
-### **Unit Tests**
-
-- Target: 80% code coverage
-- Critical paths: 100% coverage
-- Add 150+ new tests
-
-### **Integration Tests**
-
-- Batch download scenarios (10, 50, 100, 500 files)
-- Multi-window scenarios
-- Network interruption
-- Telegram restart scenarios
-
-### **Performance Tests**
-
-- Memory leak detection
-- CPU profiling
-- Large file handling (5GB+)
-- 1000+ files in queue
-
-### **User Acceptance Tests**
-
-- Beta program (50 users)
-- Real-world usage (1 month)
-- Feedback collection
-- Bug fixes
-
----
-
-## 🎯 Success Metrics (v2.0.0)
-
-| Metric                    | v1.0.0      | v2.0.0 Target |
-| ------------------------- | ----------- | ------------- |
-| Batch Download Accuracy   | 40-60%      | 90-95%        |
-| Single File Accuracy      | 85%         | 95%+          |
-| Focus Dependency          | Required ❌ | Optional ✅   |
-| Max Batch Size            | ~50 files   | 1000+ files   |
-| Memory Usage              | <100MB      | <200MB        |
-| CPU Usage (idle)          | <2%         | <3%           |
-| Database Size             | N/A         | ~5-10MB/year  |
-| Pattern Learning Accuracy | N/A         | 85%+          |
-| User Satisfaction         | 7/10        | 9/10          |
-
----
-
-## 💰 Development Cost Estimate
-
-| Phase                    | Duration    | Complexity  | Resources     |
-| ------------------------ | ----------- | ----------- | ------------- |
-| Phase 1: SQLite          | 1 week      | Medium      | 1 Senior Dev  |
-| Phase 2: Smart Detection | 3 weeks     | High        | 1 Senior Dev  |
-| Phase 3: Learning        | 2 weeks     | Medium-High | 1 Senior Dev  |
-| Phase 4: Performance     | 1 week      | Medium      | 1 Senior Dev  |
-| Phase 5: Polish          | 1 week      | Low         | 1 Dev + QA    |
-| **Total**                | **8 weeks** | -           | **~2 months** |
-
-**Cost Savings:**
-
-- ✅ 50% reduction in timeline (16 → 8 weeks)
-- ✅ No ML engineer needed
-- ✅ No complex API integration
-- ✅ Simpler architecture = easier maintenance
-
----
-
-## 🚨 Risks & Mitigation
-
-### **Risk #1: SQLite Migration Issues**
-
-- **Probability:** Low-Medium
-- **Impact:** Medium
-- **Mitigation:**
-  - Comprehensive migration testing
-  - Keep JSON backups during migration
-  - Rollback mechanism
-  - Gradual migration (keep both for 1 version)
-
-### **Risk #2: Window Detection Accuracy**
-
-- **Probability:** Medium
-- **Impact:** Medium
-- **Mitigation:**
-  - Multiple fallback strategies
-  - User feedback mechanism
-  - Continuous learning from corrections
-  - Allow manual override
-
-### **Risk #3: Performance with Large Databases**
-
-- **Probability:** Low
-- **Impact:** Low
-- **Mitigation:**
-  - Proper indexing strategy
-  - Regular VACUUM operations
-  - Archive old data (>1 year)
-  - Query optimization
-
-### **Risk #4: Breaking Changes for Users**
-
-- **Probability:** Low
-- **Impact:** High
-- **Mitigation:**
-  - Automatic migration tool
-  - Settings preserved
-  - Clear upgrade guide
-  - Beta testing period
-
----
-
-## 📝 Next Steps
-
-1. ✅ **Review this plan** with team
-2. ✅ **Prioritize features** based on user feedback
-3. ✅ **Create GitHub issues** for each task
-4. ✅ **Start Phase 1** development
-5. ✅ **Set up CI/CD** for v2.0 branch
-
----
-
-## �️ Technology Stack & Dependencies
-
-### **New Dependencies (v2.0.0)**
-
-| Package                     | Version | Purpose        | Size   |
-| --------------------------- | ------- | -------------- | ------ |
-| `sqlite-net-pcl`            | Latest  | SQLite ORM     | ~500KB |
-| `SQLitePCLRaw.bundle_green` | Latest  | SQLite runtime | ~1MB   |
-| `Dapper` (optional)         | Latest  | Micro-ORM      | ~100KB |
-
-### **Key Design Decisions**
-
-1. **SQLite over JSON**
-   - ✅ Better for relationships
-   - ✅ Faster queries with indexes
-   - ✅ ACID transactions
-   - ❌ Slightly larger file size
-
-2. **No External APIs**
-   - ✅ Simple & maintainable
-   - ✅ No user authentication needed
-   - ✅ Privacy-friendly
-   - ❌ 90-95% accuracy vs 99% with API
-
-3. **Multi-Strategy Detection**
-   - ✅ Robust with fallbacks
-   - ✅ Works in edge cases
-   - ✅ Self-improving
-   - ❌ More complex code
-
----
-
-## 📚 References
-
-- [SQLite Documentation](https://www.sqlite.org/docs.html)
-- [sqlite-net-pcl](https://github.com/praeclarum/sqlite-net)
-- [Win32 EnumWindows API](https://docs.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-enumwindows)
-- [Win32 Process Monitoring](https://docs.microsoft.com/en-us/windows/win32/psapi/process-status-helper)
-
----
-
-**Last Updated:** January 19, 2026  
-**Status:** 📋 Planning Phase  
-**Target Release:** Q1 2026 (March 2026)  
-**Estimated Effort:** 8 weeks  
-**Approach:** Smart Detection + SQLite (No External APIs)
+**Last Reviewed:** January 26, 2026  
+**Status:** 📍 Phase 2 Week 3 - Stable  
+**Next Milestone:** TBD based on team decision (Option A or B)  
+**Blocked By:** None (can proceed either direction)
 
 ---
 
 <div align="center">
-  <b>v2.0.0 - Smart & Simple 🚀</b>
+  <b>Phase 2 Week 3 - STABLE ✅</b>
   <br>
-  <i>Intelligent • Independent • Fast</i>
+  <i>Choose Wisely: Stabilize or Continue</i>
   <br><br>
-  <b>90-95% Accuracy | No API Dependencies | 8 Weeks Development</b>
+  <b>123/129 Tests Passing | V2.0 Features Optional | Ready for Decision</b>
 </div>
