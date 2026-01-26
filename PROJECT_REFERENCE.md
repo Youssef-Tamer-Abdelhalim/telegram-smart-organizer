@@ -1,11 +1,11 @@
 # 📘 Telegram Smart Organizer - Project Reference Document
 
 > **Complete technical reference for Phase 2 Week 3 codebase**
-> 
+>
 > **Created:** January 2026
-> 
+>
 > **Last Updated:** January 26, 2026
-> 
+>
 > **Current Version:** Phase 2 Week 3 - Background Window Monitor
 
 ---
@@ -34,22 +34,26 @@
 ### Key Features (v1.0.0)
 
 ? **Context-Aware Organization**
+
 - Detects active Telegram window title
 - Extracts group/channel name
 - Organizes files into folders named after the group
 
 ? **Temporary File Tracking**
+
 - Monitors `.td`, `.tpart` temporary file extensions
 - Waits for download completion
 - Maps temp files to final files using rename events
 
 ? **Smart File Handling**
+
 - File stability detection (3 consecutive size checks)
 - Exponential backoff (500ms ? 2000ms)
 - 120-second timeout for large files
 - Duplicate event prevention
 
 ? **Custom Rules Engine**
+
 - File extension-based rules (e.g., all PDFs ? Documents)
 - File name pattern matching (Contains, StartsWith, EndsWith, Regex)
 - Group name-based rules
@@ -57,17 +61,20 @@
 - Priority-based rule execution
 
 ? **State Persistence**
+
 - JSON-based state storage
 - Survives application restarts
 - Automatic cleanup of old entries (30 days retention)
 
 ? **Statistics & Analytics**
+
 - Total files organized
 - File type distribution
 - Top groups
 - Daily activity tracking (last 30 days)
 
 ? **Modern UI**
+
 - WPF with MVVM pattern
 - System tray integration
 - Dark/Light theme support
@@ -198,6 +205,7 @@ TelegramOrganizer/
 **Purpose:** Main orchestrator that coordinates all services.
 
 **Key Responsibilities:**
+
 - Starts/stops file monitoring
 - Handles file created/renamed events
 - Captures window context when downloads start
@@ -205,6 +213,7 @@ TelegramOrganizer/
 - Coordinates file organization
 
 **Critical Data Structures:**
+
 ```csharp
 // Thread-safe dictionaries for tracking
 private readonly ConcurrentDictionary<string, FileContext> _pendingDownloads = new();
@@ -265,6 +274,7 @@ private bool IsTemporaryFile(string fileName)
 **Purpose:** Detects the currently active window and extracts context.
 
 **Implementation:**
+
 ```csharp
 [DllImport("user32.dll")]
 private static extern IntPtr GetForegroundWindow();
@@ -299,6 +309,7 @@ public string GetProcessName()
 **Purpose:** Monitors Downloads folder for file system changes.
 
 **Implementation:**
+
 ```csharp
 private FileSystemWatcher? _watcher;
 
@@ -307,20 +318,21 @@ public void Start(string path)
     _watcher = new FileSystemWatcher
     {
         Path = path,
-        NotifyFilter = NotifyFilters.FileName | 
-                      NotifyFilters.LastWrite | 
+        NotifyFilter = NotifyFilters.FileName |
+                      NotifyFilters.LastWrite |
                       NotifyFilters.CreationTime,
         Filter = "*.*",
         EnableRaisingEvents = true,
         IncludeSubdirectories = false
     };
-    
+
     _watcher.Created += OnCreated;
     _watcher.Renamed += OnRenamed;
 }
 ```
 
 **Events:**
+
 - `FileCreated` ? New file detected
 - `FileRenamed` ? File renamed (temp ? final)
 
@@ -333,6 +345,7 @@ public void Start(string path)
 **Purpose:** Moves files to organized folders.
 
 **Workflow:**
+
 ```
 1. Check if custom rule matches
    ?? Yes ? Use rule's target folder
@@ -360,25 +373,26 @@ public void Start(string path)
 ```
 
 **Key Methods:**
+
 ```csharp
 public string OrganizeFile(string filePath, string groupName)
 {
     // 1. Check rules
     var matchingRule = _rulesService.FindMatchingRule(fileName, groupName, fileSize);
-    
+
     // 2. Sanitize folder name
     string safeFolderName = SanitizeFolderName(targetFolder);
-    
+
     // 3. Create destination
     string destinationFolder = Path.Combine(baseDestination, safeFolderName);
     Directory.CreateDirectory(destinationFolder);
-    
+
     // 4. Get unique path
     string destPath = GetUniqueFilePath(destPath);
-    
+
     // 5. Move file
     File.Move(filePath, destPath);
-    
+
     // 6. Record stats
     _statisticsService.RecordFileOrganized(fileName, safeFolderName, fileSize);
 }
@@ -395,6 +409,7 @@ public string OrganizeFile(string filePath, string groupName)
 **Storage Location:** `%LocalAppData%\TelegramOrganizer\state.json`
 
 **Data Structure:**
+
 ```json
 {
   "pendingDownloads": {
@@ -411,6 +426,7 @@ public string OrganizeFile(string filePath, string groupName)
 ```
 
 **Key Methods:**
+
 ```csharp
 public void AddOrUpdateEntry(string fileName, FileContext context)
 {
@@ -444,6 +460,7 @@ public int CleanupOldEntries(int retentionDays = 30)
 **Storage Location:** `%LocalAppData%\TelegramOrganizer\rules.json`
 
 **Rule Types:**
+
 ```csharp
 public enum RuleType
 {
@@ -456,6 +473,7 @@ public enum RuleType
 ```
 
 **Pattern Matching:**
+
 ```csharp
 public enum PatternMatchType
 {
@@ -468,6 +486,7 @@ public enum PatternMatchType
 ```
 
 **Default Rules:** (Disabled by default)
+
 - Images: `.jpg|.jpeg|.png|.gif|.bmp|.svg|.webp` ? Images/
 - Documents: `.pdf|.docx|.doc|.txt|.xlsx|.pptx` ? Documents/
 - Videos: `.mp4|.mkv|.avi|.mov|.wmv` ? Videos/
@@ -487,6 +506,7 @@ public enum PatternMatchType
 **Storage Location:** `%LocalAppData%\TelegramOrganizer\statistics.json`
 
 **Tracked Metrics:**
+
 ```csharp
 public class OrganizationStatistics
 {
@@ -569,7 +589,7 @@ public class OrganizationRule
 private static IServiceProvider ConfigureServices()
 {
     var services = new ServiceCollection();
-    
+
     // Core Services (order matters!)
     services.AddSingleton<ILoggingService, FileLoggingService>();
     services.AddSingleton<ISettingsService, JsonSettingsService>();
@@ -582,19 +602,19 @@ private static IServiceProvider ConfigureServices()
     services.AddSingleton<SmartOrganizerEngine>();
     services.AddSingleton<IUpdateService, GitHubUpdateService>();
     services.AddSingleton<IErrorReportingService, ErrorReportingService>();
-    
+
     // ViewModels
     services.AddTransient<MainViewModel>();
     services.AddTransient<SettingsViewModel>();
     services.AddTransient<RulesViewModel>();
     services.AddTransient<StatisticsViewModel>();
-    
+
     // Views
     services.AddTransient<MainWindow>();
     services.AddTransient<SettingsWindow>();
     services.AddTransient<RulesWindow>();
     services.AddTransient<StatisticsWindow>();
-    
+
     return services.BuildServiceProvider();
 }
 ```
@@ -602,17 +622,19 @@ private static IServiceProvider ConfigureServices()
 ### MVVM Pattern
 
 **ViewModels use:**
+
 - `CommunityToolkit.Mvvm` for `ObservableObject` and `RelayCommand`
 - `INotifyPropertyChanged` for data binding
 - Dependency injection for services
 
 **Example:**
+
 ```csharp
 public partial class MainViewModel : ObservableObject
 {
     [ObservableProperty]
     private string _currentWindowTitle = "Waiting...";
-    
+
     [RelayCommand]
     private void OpenSettings()
     {
@@ -624,6 +646,7 @@ public partial class MainViewModel : ObservableObject
 ### System Tray Integration
 
 **Features:**
+
 - Minimize to tray
 - Context menu (Show, Settings, Rules, Statistics, Exit)
 - Balloon notifications on file organization
@@ -638,17 +661,17 @@ public partial class MainViewModel : ObservableObject
 ```
 1. USER ACTION
    ?? User clicks "Download" in Telegram
-   
+
 2. FILE CREATED EVENT
    ?? FileSystemWatcher detects new file
    ?? File name: "document.pdf.td" (temp file)
-   
+
 3. CONTEXT CAPTURE
    ?? SmartOrganizerEngine.OnFileCreated()
    ?? Calls: _contextDetector.GetActiveWindowTitle()
    ?? Returns: "CS50 Study Group - Telegram"
    ?? Extracts: "CS50 Study Group"
-   
+
 4. CONTEXT STORAGE
    ?? Creates FileContext:
        {
@@ -658,35 +681,35 @@ public partial class MainViewModel : ObservableObject
        }
    ?? Stores in: _pendingDownloads dictionary
    ?? Persists to: state.json
-   
+
 5. DOWNLOAD CONTINUES
    ?? Telegram downloads file
    ?? Multiple rename events may occur:
        - document.pdf.td ? document.pdf.tpart
        - document.pdf.tpart ? document.pdf.tpart2
        - Each rename updates tracking
-   
+
 6. DOWNLOAD COMPLETES
    ?? Final rename: document.pdf.tpart ? document.pdf
    ?? SmartOrganizerEngine.OnFileRenamed()
    ?? Looks up context from _pendingDownloads
    ?? Found: "CS50 Study Group"
-   
+
 7. FILE STABILITY CHECK
    ?? WaitForFileReady() called
    ?? Checks file size 3 times (500ms intervals)
    ?? Attempts exclusive file access
    ?? Timeout: 120 seconds
-   
+
 8. RULE MATCHING
    ?? Calls: _rulesService.FindMatchingRule()
    ?? No rule matches ? uses detected group name
-   
+
 9. FILE ORGANIZATION
    ?? Sanitize folder name: "CS50 Study Group"
    ?? Create folder: "C:\...\Telegram Organized\CS50 Study Group\"
    ?? Move file: document.pdf ? CS50 Study Group\document.pdf
-   
+
 10. CLEANUP
     ?? Remove from _pendingDownloads
     ?? Remove from state.json
@@ -697,22 +720,26 @@ public partial class MainViewModel : ObservableObject
 ### Edge Cases Handled
 
 ? **Direct Downloads (no temp file)**
+
 - File appears as "document.pdf" immediately
 - Marked in `_processingFiles` to prevent duplicates
 - Waits 120 seconds for file to be ready
 - Organizes immediately without rename tracking
 
 ? **Multiple Rename Events**
+
 - Each rename updates `_pendingDownloads` dictionary
 - Old key removed, new key added
 - State persisted on each update
 
 ? **App Restart During Download**
+
 - State loaded from `state.json`
 - Pending downloads restored
 - Orphaned entries (file doesn't exist) cleaned up
 
 ? **Duplicate Events**
+
 - `_processingFiles` dictionary prevents double-processing
 - Event deduplication using timestamps
 
@@ -722,14 +749,14 @@ public partial class MainViewModel : ObservableObject
 
 ### Frameworks & Libraries
 
-| Component | Technology | Version | Purpose |
-|-----------|-----------|---------|---------|
-| Target Framework | .NET 8 | 8.0 | Modern C# features |
-| UI Framework | WPF | Built-in | Windows desktop UI |
-| MVVM Toolkit | CommunityToolkit.Mvvm | 8.4.0 | MVVM helpers |
-| DI Container | Microsoft.Extensions.DependencyInjection | 10.0.2 | Dependency injection |
-| Testing | xUnit + Moq | Latest | Unit testing |
-| System Tray | Windows.Forms.NotifyIcon | Built-in | Tray integration |
+| Component        | Technology                               | Version  | Purpose              |
+| ---------------- | ---------------------------------------- | -------- | -------------------- |
+| Target Framework | .NET 8                                   | 8.0      | Modern C# features   |
+| UI Framework     | WPF                                      | Built-in | Windows desktop UI   |
+| MVVM Toolkit     | CommunityToolkit.Mvvm                    | 8.4.0    | MVVM helpers         |
+| DI Container     | Microsoft.Extensions.DependencyInjection | 10.0.2   | Dependency injection |
+| Testing          | xUnit + Moq                              | Latest   | Unit testing         |
+| System Tray      | Windows.Forms.NotifyIcon                 | Built-in | Tray integration     |
 
 ### Windows APIs Used
 
@@ -747,13 +774,13 @@ private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwPr
 
 ### File Storage
 
-| Data | Location | Format | Size (typical) |
-|------|----------|--------|----------------|
-| Application State | `%LocalAppData%\TelegramOrganizer\state.json` | JSON | ~10 KB |
-| Settings | `%LocalAppData%\TelegramOrganizer\settings.json` | JSON | ~1 KB |
-| Rules | `%LocalAppData%\TelegramOrganizer\rules.json` | JSON | ~5 KB |
-| Statistics | `%LocalAppData%\TelegramOrganizer\statistics.json` | JSON | ~20 KB |
-| Logs | `%LocalAppData%\TelegramOrganizer\logs\log_YYYYMMDD.txt` | Text | ~100 KB/day |
+| Data              | Location                                                 | Format | Size (typical) |
+| ----------------- | -------------------------------------------------------- | ------ | -------------- |
+| Application State | `%LocalAppData%\TelegramOrganizer\state.json`            | JSON   | ~10 KB         |
+| Settings          | `%LocalAppData%\TelegramOrganizer\settings.json`         | JSON   | ~1 KB          |
+| Rules             | `%LocalAppData%\TelegramOrganizer\rules.json`            | JSON   | ~5 KB          |
+| Statistics        | `%LocalAppData%\TelegramOrganizer\statistics.json`       | JSON   | ~20 KB         |
+| Logs              | `%LocalAppData%\TelegramOrganizer\logs\log_YYYYMMDD.txt` | Text   | ~100 KB/day    |
 
 ---
 
@@ -764,6 +791,7 @@ private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwPr
 #### 1. **Batch Downloads Fail (~40-60% success rate)**
 
 **Problem:**
+
 ```
 User downloads 50 files at once
 ? OnFileCreated() fired 50 times
@@ -773,6 +801,7 @@ User downloads 50 files at once
 ```
 
 **Root Cause:**
+
 ```csharp
 private void OnFileCreated(object? sender, FileEventArgs e)
 {
@@ -784,6 +813,7 @@ private void OnFileCreated(object? sender, FileEventArgs e)
 ```
 
 **Why It Fails:**
+
 - Download events fire rapidly (50 files in <5 seconds)
 - User might click away from Telegram during batch
 - Window title might change mid-batch
@@ -796,6 +826,7 @@ private void OnFileCreated(object? sender, FileEventArgs e)
 #### 2. **Focus Dependency**
 
 **Problem:**
+
 ```
 User must keep Telegram window FOCUSED during download
 ? If user switches to browser: context = "Google Chrome"
@@ -804,6 +835,7 @@ User must keep Telegram window FOCUSED during download
 ```
 
 **Root Cause:**
+
 ```csharp
 [DllImport("user32.dll")]
 private static extern IntPtr GetForegroundWindow(); // ? FOREGROUND ONLY!
@@ -816,6 +848,7 @@ public string GetActiveWindowTitle()
 ```
 
 **Why It Fails:**
+
 - `GetForegroundWindow()` ONLY returns the window with keyboard focus
 - Telegram might be open but not focused
 - No access to background window information
@@ -829,11 +862,13 @@ public string GetActiveWindowTitle()
 #### 3. **Performance with Large Files**
 
 **Problem:**
+
 - `WaitForFileReady()` polls file every 500-2000ms
 - CPU usage spikes during large file downloads
 - Fixed 120-second timeout (not dynamic based on file size)
 
 **Example:**
+
 ```
 5GB video file
 ? 120-second timeout might not be enough
@@ -841,6 +876,7 @@ public string GetActiveWindowTitle()
 ```
 
 **Potential Fix:**
+
 - Dynamic timeout based on file size
 - Async/await instead of polling
 - File size growth rate detection
@@ -850,6 +886,7 @@ public string GetActiveWindowTitle()
 #### 4. **No Multi-Monitor Support**
 
 **Problem:**
+
 - Window detection doesn't account for multi-monitor setups
 - Window might be on different monitor
 
@@ -858,11 +895,13 @@ public string GetActiveWindowTitle()
 #### 5. **File Type Detection**
 
 **Problem:**
+
 - Only uses file extension
 - Files without extension ? "Unsorted"
 - No MIME type detection
 
 **Example:**
+
 ```
 "image" (no extension) ? Unsorted
 Could be detected as JPG by reading file header
@@ -874,20 +913,20 @@ Could be detected as JPG by reading file header
 
 ### Memory Usage
 
-| Scenario | Memory Usage |
-|----------|-------------|
-| Idle | ~50 MB |
-| Active (10 pending downloads) | ~70 MB |
-| Active (100 pending downloads) | ~120 MB |
+| Scenario                       | Memory Usage |
+| ------------------------------ | ------------ |
+| Idle                           | ~50 MB       |
+| Active (10 pending downloads)  | ~70 MB       |
+| Active (100 pending downloads) | ~120 MB      |
 
 ### CPU Usage
 
-| Activity | CPU Usage |
-|----------|-----------|
-| Idle | <1% |
-| File monitoring | <2% |
-| File organization | 5-10% (brief spike) |
-| Large file waiting | 3-5% |
+| Activity           | CPU Usage           |
+| ------------------ | ------------------- |
+| Idle               | <1%                 |
+| File monitoring    | <2%                 |
+| File organization  | 5-10% (brief spike) |
+| Large file waiting | 3-5%                |
 
 ### Disk I/O
 
@@ -931,21 +970,25 @@ Could be detected as JPG by reading file header
 Based on this reference and PLAN_V2.md:
 
 ### Phase 1: Database Foundation
+
 1. Add SQLite database
 2. Migrate state from JSON to SQLite
 3. Create session tracking tables
 
 ### Phase 2: Smart Detection
+
 1. Implement Download Burst Detector
 2. Implement Background Window Monitor
 3. Implement Multi-Source Context Detector
 
 ### Phase 3: Learning & Intelligence
+
 1. Implement File Pattern Analyzer
 2. Implement Smart Context Cache
 3. Add confidence scoring
 
 ### Phase 4: Queue & Performance
+
 1. Implement Download Queue Manager
 2. Optimize performance
 3. Add progress tracking
@@ -955,6 +998,7 @@ Based on this reference and PLAN_V2.md:
 ## ?? File Naming Conventions
 
 ### Code Files
+
 - **Interfaces:** `I{Name}Service.cs` or `I{Name}.cs`
 - **Implementations:** `{Implementation}{Name}Service.cs`
   - Example: `JsonSettingsService`, `Win32ContextDetector`
@@ -962,6 +1006,7 @@ Based on this reference and PLAN_V2.md:
 - **ViewModels:** `{View}ViewModel.cs` (e.g., `MainViewModel.cs`)
 
 ### Namespaces
+
 - Core: `TelegramOrganizer.Core.{Contracts|Models|Services}`
 - Infra: `TelegramOrganizer.Infra.Services`
 - UI: `TelegramOrganizer.UI.{ViewModels|Views}`
@@ -984,12 +1029,14 @@ Based on this reference and PLAN_V2.md:
 ### Current Implementation
 
 ? **Good:**
+
 - No network calls except update check
 - No sensitive data storage
 - File operations within user folders
 - No admin privileges required
 
 ?? **Potential Issues:**
+
 - Logs might contain full file paths
 - No encryption for state/settings (not needed for current use case)
 - No input validation on file paths (handled by OS)
@@ -1014,16 +1061,20 @@ Based on this reference and PLAN_V2.md:
 ## ?? Quick Reference: Critical Code Locations
 
 ### To modify context detection:
+
 - `TelegramOrganizer.Infra/Services/Win32ContextDetector.cs`
 - `TelegramOrganizer.Core/Services/SmartOrganizerEngine.cs` ? `OnFileCreated()`
 
 ### To modify file organization logic:
+
 - `TelegramOrganizer.Infra/Services/FileOrganizerService.cs`
 
 ### To modify state persistence:
+
 - `TelegramOrganizer.Infra/Services/JsonPersistenceService.cs`
 
 ### To add new service:
+
 1. Add interface to `TelegramOrganizer.Core/Contracts/`
 2. Implement in `TelegramOrganizer.Infra/Services/`
 3. Register in `TelegramOrganizer.UI/App.xaml.cs` ? `ConfigureServices()`

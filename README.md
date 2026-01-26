@@ -20,30 +20,34 @@
     ⬇
 📁 Documents/Telegram Organized/CS50 Study Group/lecture.pdf
 ```
+
 ## [Phase 2 Week 3] - 2026-01-26
+
 ---
 
 ## ✨ Features
 
 ### Core Features (v1.0)
-| Feature | Description |
-|---------|-------------|
-| 🎯 **Context Detection** | Captures active Telegram window when download starts |
-| 🚀 **Auto-Organization** | Moves files to context-based folders automatically |
-| ⚙️ **Custom Rules** | Create rules by file extension, name pattern, or size |
-| 📊 **Statistics** | Track organized files, top groups, file types |
-| 🌙 **Dark Theme** | Modern dark mode support |
-| 🔔 **Notifications** | Get notified when files are organized |
-| 🔄 **Auto-Update** | Check for new versions automatically |
-| 📝 **Error Reporting** | Comprehensive error logging |
-| 🌍 **Arabic Support** | Full support for Arabic group names |
+
+| Feature                  | Description                                           |
+| ------------------------ | ----------------------------------------------------- |
+| 🎯 **Context Detection** | Captures active Telegram window when download starts  |
+| 🚀 **Auto-Organization** | Moves files to context-based folders automatically    |
+| ⚙️ **Custom Rules**      | Create rules by file extension, name pattern, or size |
+| 📊 **Statistics**        | Track organized files, top groups, file types         |
+| 🌙 **Dark Theme**        | Modern dark mode support                              |
+| 🔔 **Notifications**     | Get notified when files are organized                 |
+| 🔄 **Auto-Update**       | Check for new versions automatically                  |
+| 📝 **Error Reporting**   | Comprehensive error logging                           |
+| 🌍 **Arabic Support**    | Full support for Arabic group names                   |
 
 ### Phase 2 Features (Week 1-3)
-| Feature | Description |
-|---------|-------------|
-| 💾 **SQLite Database** | Persistent session tracking and statistics |
-| 📦 **Download Sessions** | Intelligent batch download detection |
-| ⚡ **Burst Detection** | Groups rapid downloads from same source |
+
+| Feature                   | Description                                   |
+| ------------------------- | --------------------------------------------- |
+| 💾 **SQLite Database**    | Persistent session tracking and statistics    |
+| 📦 **Download Sessions**  | Intelligent batch download detection          |
+| ⚡ **Burst Detection**    | Groups rapid downloads from same source       |
 | 👁️ **Background Monitor** | Tracks Telegram windows even when not focused |
 
 ---
@@ -51,15 +55,18 @@
 ## 📥 Installation
 
 ### Option 1: Windows Installer (Recommended)
+
 1. Download `TelegramSmartOrganizer_Setup_1.0.0.exe` from [Releases](../../releases)
 2. Run installer and follow instructions
 3. Launch from Start Menu or Desktop shortcut
 
 ### Option 2: Portable Executable
+
 1. Download `TelegramSmartOrganizer.exe` from [Releases](../../releases)
 2. Run the executable - no installation needed!
 
 ### Option 3: Build from Source
+
 ```bash
 git clone https://github.com/yourusername/telegram-smart-organizer.git
 cd telegram-smart-organizer/Project
@@ -72,6 +79,7 @@ dotnet run --project TelegramOrganizer.UI
 ```
 
 ### System Requirements
+
 - **OS**: Windows 10 (1809+) or Windows 11
 - **Framework**: [.NET 8.0 Runtime](https://dotnet.microsoft.com/download/dotnet/8.0)
 - **RAM**: 100 MB minimum
@@ -93,15 +101,15 @@ dotnet run --project TelegramOrganizer.UI
 
 Access settings via **Settings** button or system tray menu:
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| **Destination Folder** | `Documents\Telegram Organized` | Where organized files go |
-| **Downloads Folder** | `Downloads` | Folder to monitor |
-| **Retention Days** | 30 days | How long to keep file history |
-| **Minimize to Tray** | Yes | Hide to system tray on minimize |
-| **Dark Theme** | No | Enable dark mode |
-| **Notifications** | Yes | Show notifications on organize |
-| **Run on Startup** | No | Start with Windows |
+| Setting                | Default                        | Description                     |
+| ---------------------- | ------------------------------ | ------------------------------- |
+| **Destination Folder** | `Documents\Telegram Organized` | Where organized files go        |
+| **Downloads Folder**   | `Downloads`                    | Folder to monitor               |
+| **Retention Days**     | 30 days                        | How long to keep file history   |
+| **Minimize to Tray**   | Yes                            | Hide to system tray on minimize |
+| **Dark Theme**         | No                             | Enable dark mode                |
+| **Notifications**      | Yes                            | Show notifications on organize  |
+| **Run on Startup**     | No                             | Start with Windows              |
 
 ---
 
@@ -109,14 +117,15 @@ Access settings via **Settings** button or system tray menu:
 
 Create powerful rules to override default organization behavior:
 
-| Rule Type | Example | Description |
-|-----------|---------|-------------|
-| **File Extension** | `.pdf` → `Documents` | Route PDFs to Documents folder |
-| **File Name Pattern** | Contains "invoice" → `Invoices` | Match file name patterns |
-| **Group Name** | "Work Team" → `Work Files` | Organize by source group |
-| **File Size** | > 100MB → `Large Files` | Handle large files differently |
+| Rule Type             | Example                         | Description                    |
+| --------------------- | ------------------------------- | ------------------------------ |
+| **File Extension**    | `.pdf` → `Documents`            | Route PDFs to Documents folder |
+| **File Name Pattern** | Contains "invoice" → `Invoices` | Match file name patterns       |
+| **Group Name**        | "Work Team" → `Work Files`      | Organize by source group       |
+| **File Size**         | > 100MB → `Large Files`         | Handle large files differently |
 
 **Default Rules Included:**
+
 - Images (jpg, png, gif) → `Images/`
 - Documents (pdf, docx, txt) → `Documents/`
 - Videos (mp4, mkv, avi) → `Videos/`
@@ -150,6 +159,7 @@ TelegramOrganizer/
 ```
 
 **Tech Stack:**
+
 - **.NET 8.0** + WPF for modern Windows desktop
 - **MVVM Pattern** with CommunityToolkit.Mvvm
 - **Dependency Injection** for clean architecture
@@ -179,22 +189,26 @@ All application data is stored locally:
 ## 🛠️ Building & Publishing
 
 ### Build Release
+
 ```bash
 dotnet build -c Release
 ```
 
 ### Create Portable Executable
+
 ```bash
 dotnet publish TelegramOrganizer.UI -c Release -r win-x64 ^
   --self-contained false -p:PublishSingleFile=true -o publish
 ```
 
 ### Create Windows Installer
+
 1. Install [Inno Setup 6](https://jrsoftware.org/isinfo.php)
 2. Run `Installer/build-installer.bat`
 3. Find installer in `Installer/Output/`
 
 ### Run Tests
+
 ```bash
 dotnet test
 ```
