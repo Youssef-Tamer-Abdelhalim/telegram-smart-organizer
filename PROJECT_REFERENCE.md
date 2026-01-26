@@ -10,7 +10,7 @@
 
 ---
 
-## ?? Table of Contents
+## 📑 Table of Contents
 
 1. [Project Overview](#project-overview)
 2. [Architecture](#architecture)
@@ -25,7 +25,7 @@
 
 ---
 
-## ?? Project Overview
+## 📋 Project Overview
 
 ### What is Telegram Smart Organizer?
 
@@ -33,47 +33,47 @@
 
 ### Key Features (v1.0.0)
 
-? **Context-Aware Organization**
+✅ **Context-Aware Organization**
 
 - Detects active Telegram window title
 - Extracts group/channel name
 - Organizes files into folders named after the group
 
-? **Temporary File Tracking**
+✅ **Temporary File Tracking**
 
 - Monitors `.td`, `.tpart` temporary file extensions
 - Waits for download completion
 - Maps temp files to final files using rename events
 
-? **Smart File Handling**
+✅ **Smart File Handling**
 
 - File stability detection (3 consecutive size checks)
-- Exponential backoff (500ms ? 2000ms)
+- Exponential backoff (500ms → 2000ms)
 - 120-second timeout for large files
 - Duplicate event prevention
 
-? **Custom Rules Engine**
+✅ **Custom Rules Engine**
 
-- File extension-based rules (e.g., all PDFs ? Documents)
+- File extension-based rules (e.g., all PDFs → Documents)
 - File name pattern matching (Contains, StartsWith, EndsWith, Regex)
 - Group name-based rules
 - File size-based rules
 - Priority-based rule execution
 
-? **State Persistence**
+✅ **State Persistence**
 
 - JSON-based state storage
 - Survives application restarts
 - Automatic cleanup of old entries (30 days retention)
 
-? **Statistics & Analytics**
+✅ **Statistics & Analytics**
 
 - Total files organized
 - File type distribution
 - Top groups
 - Daily activity tracking (last 30 days)
 
-? **Modern UI**
+✅ **Modern UI**
 
 - WPF with MVVM pattern
 - System tray integration
@@ -83,35 +83,36 @@
 
 ---
 
-## ??? Architecture
+## 🏗️ Architecture
 
 ### Clean Architecture Pattern
 
 The project follows **Clean Architecture** principles with clear separation of concerns:
 
 ```
-???????????????????????????????????????????????????????
-?                    UI Layer (WPF)                   ?
-?  - MainWindow, SettingsWindow, RulesWindow, etc.   ?
-?  - ViewModels (MVVM pattern)                       ?
-?  - Dependency Injection (DI)                       ?
-???????????????????????????????????????????????????????
-                   ? Depends on
-???????????????????????????????????????????????????????
-?              Infrastructure Layer                   ?
-?  - Concrete implementations of interfaces          ?
-?  - Win32ContextDetector, FileOrganizerService      ?
-?  - JsonPersistenceService, WindowsWatcherService   ?
-?  - File I/O, Windows API calls                     ?
-???????????????????????????????????????????????????????
-                   ? Implements
-???????????????????????????????????????????????????????
-?                  Core Layer                         ?
-?  - Interfaces (Contracts)                          ?
-?  - Models (Domain entities)                        ?
-?  - SmartOrganizerEngine (Business logic)           ?
-?  - NO external dependencies                        ?
-???????????????????????????????????????????????????????
+┌─────────────────────────────────────────────┐
+│            UI Layer (WPF)                   │
+│  - MainWindow, SettingsWindow, etc.         │
+│  - ViewModels (MVVM pattern)                │
+│  - Dependency Injection (DI)                │
+└─────────────────────────────────────────────┘
+                   ↓ Depends on
+┌─────────────────────────────────────────────┐
+│        Infrastructure Layer                 │
+│  - Concrete implementations                 │
+│  - Win32ContextDetector                     │
+│  - FileOrganizerService                     │
+│  - JsonPersistenceService                   │
+│  - File I/O, Windows API calls              │
+└─────────────────────────────────────────────┘
+                   ↓ Implements
+┌─────────────────────────────────────────────┐
+│            Core Layer                       │
+│  - Interfaces (Contracts)                   │
+│  - Models (Domain entities)                 │
+│  - SmartOrganizerEngine                     │
+│  - NO external dependencies                 │
+└─────────────────────────────────────────────┘
 ```
 
 ### Dependency Flow
