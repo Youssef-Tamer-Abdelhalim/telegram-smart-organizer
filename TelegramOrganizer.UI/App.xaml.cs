@@ -56,16 +56,11 @@ namespace TelegramOrganizer.UI
             // File Organization - depends on ISettingsService, IRulesService, IStatisticsService
             services.AddSingleton<IFileOrganizer, FileOrganizerService>();
             
-            // V2.0: Database Service
+            // V2.0: Phase 2 Week 3 Features (Optional - fully functional)
+            // These services are integrated but optional in SmartOrganizerEngine
             services.AddSingleton<IDatabaseService, SQLiteDatabaseService>();
-            
-            // V2.0: Download Session Manager
             services.AddSingleton<IDownloadSessionManager, DownloadSessionManager>();
-            
-            // V2.0: Download Burst Detector
             services.AddSingleton<IDownloadBurstDetector, DownloadBurstDetector>();
-            
-            // V2.0: Background Window Monitor
             services.AddSingleton<IBackgroundWindowMonitor, BackgroundWindowMonitor>();
             
             // Main Engine - depends on all above services
@@ -100,8 +95,9 @@ namespace TelegramOrganizer.UI
             // Log startup
             var logger = Services.GetRequiredService<ILoggingService>();
             logger.LogInfo("=== Application Starting ===");
+            logger.LogInfo("[Version] Phase 2 Week 3 - Background Window Monitor");
 
-            // V2.0: Initialize database
+            // V2.0: Initialize database (optional - for advanced features)
             _ = InitializeDatabaseAsync();
 
             // Load settings to check for start minimized

@@ -1,10 +1,12 @@
-# ?? Telegram Smart Organizer - Project Reference Document
+# ðŸ“˜ Telegram Smart Organizer - Project Reference Document
 
-> **Complete technical reference for v1.0.0 codebase**
+> **Complete technical reference for Phase 2 Week 3 codebase**
 > 
-> **Created:** January 2025
+> **Created:** January 2026
 > 
-> **Purpose:** Development reference for v2.0.0 implementation
+> **Last Updated:** January 26, 2026
+> 
+> **Current Version:** Phase 2 Week 3 - Background Window Monitor
 
 ---
 
@@ -241,7 +243,7 @@ private async Task<bool> WaitForFileReady(string filePath, int timeoutMs)
 private string ExtractTelegramGroupName(string windowTitle)
 {
     // - Removes unread count: "(123) GroupName"
-    // - Removes message count: "GroupName – (3082)"
+    // - Removes message count: "GroupName ï¿½ (3082)"
     // - Removes " - Telegram" suffix
     // - Removes emojis (keeps Arabic/English text)
     // - Returns "Unsorted" if empty

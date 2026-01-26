@@ -5,7 +5,7 @@
 [![.NET](https://img.shields.io/badge/.NET-8.0-512BD4?logo=dotnet)](https://dotnet.microsoft.com/download)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11-0078D6?logo=windows)](https://www.microsoft.com/windows)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.0.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/Version-2.0--Week3-blue.svg)](CHANGELOG.md)
 
 ---
 
@@ -20,11 +20,12 @@
     ⬇
 📁 Documents/Telegram Organized/CS50 Study Group/lecture.pdf
 ```
-## [1.0.0] - 2026-01-19
+## [Phase 2 Week 3] - 2026-01-26
 ---
 
 ## ✨ Features
 
+### Core Features (v1.0)
 | Feature | Description |
 |---------|-------------|
 | 🎯 **Context Detection** | Captures active Telegram window when download starts |
@@ -36,6 +37,14 @@
 | 🔄 **Auto-Update** | Check for new versions automatically |
 | 📝 **Error Reporting** | Comprehensive error logging |
 | 🌍 **Arabic Support** | Full support for Arabic group names |
+
+### Phase 2 Features (Week 1-3)
+| Feature | Description |
+|---------|-------------|
+| 💾 **SQLite Database** | Persistent session tracking and statistics |
+| 📦 **Download Sessions** | Intelligent batch download detection |
+| ⚡ **Burst Detection** | Groups rapid downloads from same source |
+| 👁️ **Background Monitor** | Tracks Telegram windows even when not focused |
 
 ---
 
