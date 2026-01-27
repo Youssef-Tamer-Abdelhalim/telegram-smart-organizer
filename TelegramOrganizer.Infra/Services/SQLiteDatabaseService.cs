@@ -20,18 +20,39 @@ namespace TelegramOrganizer.Infra.Services
         private SQLiteAsyncConnection? _connection;
         private readonly object _lock = new object();
 
-        public SQLiteDatabaseService()
+        /// <summary>
+        /// Creates a new SQLiteDatabaseService instance.
+        /// </summary>
+        /// <param name="databasePath">
+        /// Optional custom database path. 
+        /// - If null: Uses default AppData location (%LocalAppData%\TelegramOrganizer\organizer.db) for production use.
+        /// - If provided: Uses the specified path, primarily for unit testing with isolated test databases.
+        /// </param>
+        public SQLiteDatabaseService(string? databasePath = null)
         {
-            // Store database in AppData/Local/TelegramOrganizer
-            string appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            string appFolder = Path.Combine(appDataPath, "TelegramOrganizer");
-
-            if (!Directory.Exists(appFolder))
+            if (!string.IsNullOrEmpty(databasePath))
             {
-                Directory.CreateDirectory(appFolder);
+                // Use provided path (for testing)
+                var directory = Path.GetDirectoryName(databasePath);
+                if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+                {
+                    Directory.CreateDirectory(directory);
+                }
+                _databasePath = databasePath;
             }
+            else
+            {
+                // Store database in AppData/Local/TelegramOrganizer (production default)
+                string appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+                string appFolder = Path.Combine(appDataPath, "TelegramOrganizer");
 
-            _databasePath = Path.Combine(appFolder, "organizer.db");
+                if (!Directory.Exists(appFolder))
+                {
+                    Directory.CreateDirectory(appFolder);
+                }
+
+                _databasePath = Path.Combine(appFolder, "organizer.db");
+            }
         }
 
         // ========================================
@@ -481,16 +502,17 @@ namespace TelegramOrganizer.Infra.Services
 
             var cutoffDate = DateTime.Now.AddDays(-days).Date;
 
-            var activity = await _connection.QueryAsync<DailyActivityResult>(
-                @"SELECT DATE(organized_time) as Date, COUNT(*) as Count 
-                  FROM file_statistics 
-                  WHERE organized_time >= ? 
-                  GROUP BY DATE(organized_time) 
-                  ORDER BY Date", cutoffDate);
+            // Get all statistics and filter/group in memory to avoid SQLite date comparison issues
+            var allStats = await _connection.Table<FileStatisticEntity>()
+                .Where(s => s.OrganizedTime >= cutoffDate)
+                .ToListAsync();
 
-            return activity
-                .Where(a => !string.IsNullOrEmpty(a.Date))
-                .ToDictionary(a => DateTime.Parse(a.Date), a => a.Count);
+            // Group by date in memory
+            var activity = allStats
+                .GroupBy(s => s.OrganizedTime.Date)
+                .ToDictionary(g => g.Key, g => g.Count());
+
+            return activity;
         }
 
         public async Task<(int batchCount, int singleCount, double batchPercentage)> GetBatchDownloadStatsAsync()

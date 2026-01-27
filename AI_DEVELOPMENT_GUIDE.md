@@ -62,36 +62,42 @@ SmartOrganizerEngine (main orchestrator)
 ## Development Rules (STRICT - Follow or Break Things!)
 
 ### Rule #1: Test-Driven Development
+
 - ❌ DON'T write code without tests
 - ✅ DO write test first, then implement
 - ✅ DO ensure all tests pass before committing
 - ❌ DON'T skip failing tests (fix or remove properly)
 
 ### Rule #2: One Thing at a Time
+
 - ❌ DON'T implement multiple features simultaneously
 - ✅ DO complete one feature 100% before starting next
 - ✅ DO stages: Interface → Implementation → Tests → Integration → Beta
 - ❌ DON'T rush to "just make it work"
 
 ### Rule #3: No Breaking Changes
+
 - ❌ DON'T remove existing functionality
 - ✅ DO make changes backward compatible
 - ✅ DO keep v1.0 as fallback for v2.0 features
 - ❌ DON'T force users to migrate immediately
 
 ### Rule #4: Keep It Simple
+
 - ❌ DON'T over-engineer solutions
 - ✅ DO choose simple, maintainable approaches
 - ✅ DO ask "is this really needed?" before adding complexity
 - ❌ DON'T add features "because it would be cool"
 
 ### Rule #5: Documentation is Code
+
 - ❌ DON'T write code without comments for complex logic
 - ✅ DO update PLAN_V2.md when changing direction
 - ✅ DO keep PROJECT_REFERENCE.md in sync
 - ❌ DON'T assume code is self-documenting
 
 ### Rule #6: Git Discipline
+
 - ❌ DON'T commit broken code
 - ✅ DO write clear commit messages
 - ✅ DO tag stable versions (e.g., `v2.0-week3-stable`)
@@ -102,18 +108,21 @@ SmartOrganizerEngine (main orchestrator)
 ## What You Should Focus On
 
 ### High-Priority Tasks ✅
+
 1. **Fix 6 skipped tests** - Isolation issues in SQLiteDatabaseServiceTests
 2. **Performance benchmarks** - Establish baseline metrics (memory/CPU)
 3. **Beta testing preparation** - Make app ready for real users
 4. **Documentation polish** - Ensure all docs are accurate
 
 ### Medium-Priority Improvements ⚠️
+
 1. **Dynamic timeout** for large files (currently fixed 120s)
 2. **Better error handling** in critical paths
 3. **Reduce logging verbosity** in production mode
 4. **Multi-monitor testing**
 
 ### Low-Priority / Future Features ⏳
+
 1. Network drive support
 2. MIME type detection (currently extension-based only)
 3. Cloud backup/sync
@@ -198,6 +207,7 @@ SmartOrganizerEngine (main orchestrator)
 ### When Responding to User
 
 ✅ **DO:**
+
 - Be direct and concise
 - Explain WHY, not just WHAT
 - Propose options when uncertain
@@ -205,6 +215,7 @@ SmartOrganizerEngine (main orchestrator)
 - Reference specific files/lines
 
 ❌ **DON'T:**
+
 - Make assumptions without asking
 - Over-explain simple things
 - Propose massive rewrites without reason
@@ -263,6 +274,7 @@ git commit -m "type: message"  # Commit (feat/fix/docs/test/refactor)
 ### Testing Checklist
 
 Before any commit:
+
 - [ ] All tests pass (dotnet test)
 - [ ] No compiler warnings
 - [ ] Code is commented (complex parts)
@@ -276,6 +288,7 @@ Before any commit:
 **Primary Goal:** Help stabilize Phase 2 Week 3 and prepare for next phase
 
 **Success Criteria:**
+
 1. All 129 tests passing (fix 6 skipped tests)
 2. Performance benchmarks established
 3. Documentation is accurate and complete
@@ -283,6 +296,7 @@ Before any commit:
 5. User can upgrade smoothly
 
 **Remember:**
+
 - Quality > Speed
 - Simple > Complex
 - Working > Perfect
@@ -293,6 +307,7 @@ Before any commit:
 ## Final Warning ⚠️
 
 This project was reverted from Week 4/5 back to Week 3 due to:
+
 - Rushed implementation
 - Skipped tests
 - Complex features without proper foundation
@@ -301,6 +316,7 @@ This project was reverted from Week 4/5 back to Week 3 due to:
 **Don't repeat these mistakes!**
 
 Ask yourself before every change:
+
 1. Is this really needed NOW?
 2. Do I have tests for this?
 3. Will this break existing functionality?

@@ -11,81 +11,77 @@ namespace TelegramOrganizer.Tests.Services
 {
     /// <summary>
     /// Tests for SQLiteDatabaseService.
-    /// Note: These tests use a shared database instance and may have interdependencies.
-    /// Each test should clean up after itself or use unique data.
+    /// Each test uses its own isolated database file for proper test isolation.
+    /// Database files are stored in bin/TestDatabases and cleaned up after each test.
     /// </summary>
     public class SQLiteDatabaseServiceTests : IAsyncLifetime
     {
         private readonly SQLiteDatabaseService _databaseService;
+        private readonly string _testDatabasePath;
 
         public SQLiteDatabaseServiceTests()
         {
-            _databaseService = new SQLiteDatabaseService();
+            // Create unique database path for each test instance
+            var testId = Guid.NewGuid().ToString("N")[..8];
+            
+            // Use bin/TestDatabases folder instead of temp folder for reliability
+            var testFolder = Path.Combine(
+                AppContext.BaseDirectory, 
+                "TestDatabases"
+            );
+            
+            if (!Directory.Exists(testFolder))
+            {
+                Directory.CreateDirectory(testFolder);
+            }
+            
+            _testDatabasePath = Path.Combine(testFolder, $"test_{testId}.db");
+            _databaseService = new SQLiteDatabaseService(_testDatabasePath);
         }
 
         public async Task InitializeAsync()
         {
             // Initialize database before each test
             await _databaseService.InitializeDatabaseAsync();
-            
-            // Clean up any leftover test data
-            await CleanupTestDataAsync();
         }
 
-        public async Task DisposeAsync()
+        public Task DisposeAsync()
         {
-            // Cleanup after each test
-            await CleanupTestDataAsync();
-            
             // Close connection
             _databaseService.CloseConnection();
-        }
-
-        private async Task CleanupTestDataAsync()
-        {
+            
+            // Force garbage collection to release database file handles
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+            
+            // Delete the test database file
             try
             {
-                // Delete ALL data for clean test environment
-                
-                // 1. End and delete all sessions
-                var allSessions = await _databaseService.GetSessionsAsync(true, 10000);
-                foreach (var session in allSessions)
+                if (File.Exists(_testDatabasePath))
                 {
-                    await _databaseService.EndSessionAsync(session.Id);
+                    File.Delete(_testDatabasePath);
                 }
-                await _databaseService.DeleteOldSessionsAsync(0); // Delete all
-                
-                // 2. Clear inactive sessions too
-                var inactiveSessions = await _databaseService.GetSessionsAsync(false, 10000);
-                foreach (var session in inactiveSessions)
-                {
-                    // End them as well, DeleteOldSessions will remove them
-                    await _databaseService.EndSessionAsync(session.Id);
-                }
-                await _databaseService.DeleteOldSessionsAsync(0); // Delete all again
             }
             catch
             {
-                // Ignore cleanup errors during test setup
+                // Ignore cleanup errors
             }
+            
+            return Task.CompletedTask;
         }
 
         [Fact]
-        public async Task InitializeDatabaseAsync_CreatesDatabase()
+        public void InitializeDatabaseAsync_CreatesDatabase()
         {
-            // Arrange & Act
-            await _databaseService.InitializeDatabaseAsync();
-
-            // Assert
-            var dbPath = _databaseService.GetDatabasePath();
-            Assert.True(File.Exists(dbPath));
+            // Assert - database should already be created by InitializeAsync
+            Assert.True(File.Exists(_testDatabasePath));
         }
 
         [Fact]
         public async Task CreateSessionAsync_CreatesNewSession()
         {
             // Arrange
-            await _databaseService.InitializeDatabaseAsync();
             string groupName = "Test Group";
 
             // Act
@@ -102,7 +98,6 @@ namespace TelegramOrganizer.Tests.Services
         public async Task GetActiveSessionAsync_ReturnsActiveSession()
         {
             // Arrange
-            await _databaseService.InitializeDatabaseAsync();
             var created = await _databaseService.CreateSessionAsync("Active Group");
 
             // Act
@@ -118,7 +113,6 @@ namespace TelegramOrganizer.Tests.Services
         public async Task EndSessionAsync_MarksSessionInactive()
         {
             // Arrange
-            await _databaseService.InitializeDatabaseAsync();
             var session = await _databaseService.CreateSessionAsync("Test Group");
 
             // Act
@@ -135,7 +129,6 @@ namespace TelegramOrganizer.Tests.Services
         public async Task AddFileToSessionAsync_AddsFileToSession()
         {
             // Arrange
-            await _databaseService.InitializeDatabaseAsync();
             var session = await _databaseService.CreateSessionAsync("Test Group");
 
             // Act
@@ -147,11 +140,10 @@ namespace TelegramOrganizer.Tests.Services
             Assert.Equal(1, updated.FileCount);
         }
 
-        [Fact(Skip = "Test isolation issue - V2.0 optional feature")]
+        [Fact]
         public async Task SavePatternAsync_SavesNewPattern()
         {
             // Arrange
-            await _databaseService.InitializeDatabaseAsync();
             var pattern = new FilePattern
             {
                 FileExtension = ".pdf",
@@ -174,8 +166,6 @@ namespace TelegramOrganizer.Tests.Services
         public async Task GetBestPatternAsync_ReturnsHighestConfidencePattern()
         {
             // Arrange
-            await _databaseService.InitializeDatabaseAsync();
-            
             await _databaseService.SavePatternAsync(new FilePattern
             {
                 FileExtension = ".pdf",
@@ -203,11 +193,10 @@ namespace TelegramOrganizer.Tests.Services
             Assert.Equal(0.9, best.ConfidenceScore);
         }
 
-        [Fact(Skip = "Test isolation issue - V2.0 optional feature")]
+        [Fact]
         public async Task RecordFileStatisticAsync_RecordsStatistic()
         {
             // Arrange
-            await _databaseService.InitializeDatabaseAsync();
             var session = await _databaseService.CreateSessionAsync("Test Group");
 
             // Act
@@ -227,12 +216,10 @@ namespace TelegramOrganizer.Tests.Services
             Assert.Equal(1, total);
         }
 
-        [Fact(Skip = "Test isolation issue - V2.0 optional feature")]
+        [Fact]
         public async Task GetTopGroupsAsync_ReturnsTopGroups()
         {
             // Arrange
-            await _databaseService.InitializeDatabaseAsync();
-
             await _databaseService.RecordFileStatisticAsync("file1.pdf", ".pdf", 1024, "Group A", "GroupA", false);
             await _databaseService.RecordFileStatisticAsync("file2.pdf", ".pdf", 1024, "Group A", "GroupA", false);
             await _databaseService.RecordFileStatisticAsync("file3.pdf", ".pdf", 1024, "Group B", "GroupB", false);
@@ -250,7 +237,6 @@ namespace TelegramOrganizer.Tests.Services
         public async Task SaveContextCacheAsync_SavesAndRetrievesContext()
         {
             // Arrange
-            await _databaseService.InitializeDatabaseAsync();
             string windowTitle = "CS50 Study Group - Telegram";
             string groupName = "CS50 Study Group";
 
@@ -268,7 +254,6 @@ namespace TelegramOrganizer.Tests.Services
         public async Task GetStateValueAsync_ReturnsStoredValue()
         {
             // Arrange
-            await _databaseService.InitializeDatabaseAsync();
             await _databaseService.SetStateValueAsync("test_key", "test_value");
 
             // Act
@@ -281,8 +266,7 @@ namespace TelegramOrganizer.Tests.Services
         [Fact]
         public async Task GetSchemaVersionAsync_ReturnsVersion()
         {
-            // Arrange & Act
-            await _databaseService.InitializeDatabaseAsync();
+            // Act
             var version = await _databaseService.GetSchemaVersionAsync();
 
             // Assert
@@ -292,9 +276,6 @@ namespace TelegramOrganizer.Tests.Services
         [Fact]
         public async Task CheckIntegrityAsync_ReturnsTrue()
         {
-            // Arrange
-            await _databaseService.InitializeDatabaseAsync();
-
             // Act
             var isValid = await _databaseService.CheckIntegrityAsync();
 
@@ -306,7 +287,6 @@ namespace TelegramOrganizer.Tests.Services
         public async Task EndTimedOutSessionsAsync_EndsTimedOutSessions()
         {
             // Arrange
-            await _databaseService.InitializeDatabaseAsync();
             var session = await _databaseService.CreateSessionAsync("Test Group");
             
             // Manually set last activity to past
@@ -325,48 +305,56 @@ namespace TelegramOrganizer.Tests.Services
             Assert.False(updated.IsActive);
         }
 
-        [Fact(Skip = "Test isolation issue - V2.0 optional feature")]
+        [Fact]
         public async Task DeleteOldSessionsAsync_DeletesOldSessions()
         {
-            // Arrange
-            await _databaseService.InitializeDatabaseAsync();
+            // Arrange - Create a session with an old start time directly
             var oldSession = await _databaseService.CreateSessionAsync("Old Group");
             
-            // End session and set old date
+            // End the session first
             await _databaseService.EndSessionAsync(oldSession.Id);
-            oldSession.StartTime = DateTime.Now.AddDays(-60);
-            await _databaseService.UpdateSessionAsync(oldSession);
+            
+            // Refetch to get the updated session
+            var sessionToUpdate = await _databaseService.GetSessionAsync(oldSession.Id);
+            Assert.NotNull(sessionToUpdate);
+            
+            // Set the start time to 60 days ago (before retention period)
+            sessionToUpdate.StartTime = DateTime.Now.AddDays(-60);
+            await _databaseService.UpdateSessionAsync(sessionToUpdate);
 
-            // Act
+            // Act - Delete sessions older than 30 days
             var count = await _databaseService.DeleteOldSessionsAsync(30);
 
             // Assert
             Assert.Equal(1, count);
+            
+            // Verify session is actually deleted
+            var deletedSession = await _databaseService.GetSessionAsync(oldSession.Id);
+            Assert.Null(deletedSession);
         }
 
-        [Fact(Skip = "Test isolation issue - V2.0 optional feature")]
+        [Fact]
         public async Task GetDailyActivityAsync_ReturnsActivity()
         {
-            // Arrange
-            await _databaseService.InitializeDatabaseAsync();
-
+            // Arrange - Record some file statistics
             await _databaseService.RecordFileStatisticAsync("file1.pdf", ".pdf", 1024, "Group A", "GroupA", false);
             await _databaseService.RecordFileStatisticAsync("file2.pdf", ".pdf", 1024, "Group A", "GroupA", false);
 
             // Act
             var activity = await _databaseService.GetDailyActivityAsync(30);
 
-            // Assert
+            // Assert - Activity should contain today's date with 2 files
             Assert.NotEmpty(activity);
-            Assert.Contains(DateTime.Now.Date, activity.Keys);
+            
+            // Check that we have activity for today
+            var todayActivity = activity.FirstOrDefault(kvp => kvp.Key.Date == DateTime.Now.Date);
+            Assert.True(todayActivity.Value >= 2, $"Expected at least 2 files for today, got {todayActivity.Value}. Activity keys: {string.Join(", ", activity.Keys.Select(k => k.ToString("yyyy-MM-dd")))}");
         }
 
-        [Fact(Skip = "Test isolation issue - V2.0 optional feature")]
+        [Fact]
         public async Task GetBatchDownloadStatsAsync_ReturnsStats()
         {
             // Arrange
-            await _databaseService.InitializeDatabaseAsync();
-
             await _databaseService.RecordFileStatisticAsync("file1.pdf", ".pdf", 1024, "Group A", "GroupA", true); // Batch
             await _databaseService.RecordFileStatisticAsync("file2.pdf", ".pdf", 1024, "Group B", "GroupB", false); // Single
 
