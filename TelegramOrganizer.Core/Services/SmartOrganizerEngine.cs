@@ -10,7 +10,7 @@ namespace TelegramOrganizer.Core.Services
 {
     /// <summary>
     /// Main orchestration engine for the Telegram Smart Organizer.
-    /// V2.0: All services are now required - no optional fallbacks.
+    /// V2.0 Week 4: Multi-source context detection with weighted voting.
     /// </summary>
     public class SmartOrganizerEngine
     {
@@ -21,10 +21,13 @@ namespace TelegramOrganizer.Core.Services
         private readonly ISettingsService _settingsService;
         private readonly ILoggingService _logger;
         
-        // Required V2.0 Services (no longer optional)
+        // Required V2.0 Services
         private readonly IDownloadSessionManager _sessionManager;
         private readonly IDownloadBurstDetector _burstDetector;
         private readonly IBackgroundWindowMonitor _windowMonitor;
+        
+        // Week 4: Multi-Source Context Detector (optional for backward compatibility)
+        private readonly IMultiSourceContextDetector? _multiSourceDetector;
 
         // Thread-safe tracking dictionaries
         private readonly ConcurrentDictionary<string, FileContext> _pendingDownloads = new();
@@ -35,14 +38,6 @@ namespace TelegramOrganizer.Core.Services
         /// <summary>
         /// Creates a new SmartOrganizerEngine with all required V2.0 services.
         /// </summary>
-        /// <param name="watcher">File system watcher service</param>
-        /// <param name="contextDetector">Window context detection service</param>
-        /// <param name="fileOrganizer">File organization service</param>
-        /// <param name="settingsService">Application settings service</param>
-        /// <param name="loggingService">Logging service</param>
-        /// <param name="sessionManager">V2.0: Download session manager (required)</param>
-        /// <param name="burstDetector">V2.0: Download burst detector (required)</param>
-        /// <param name="windowMonitor">V2.0: Background window monitor (required)</param>
         public SmartOrganizerEngine(
             IFileWatcher watcher,
             IContextDetector contextDetector,
@@ -51,7 +46,8 @@ namespace TelegramOrganizer.Core.Services
             ILoggingService loggingService,
             IDownloadSessionManager sessionManager,
             IDownloadBurstDetector burstDetector,
-            IBackgroundWindowMonitor windowMonitor)
+            IBackgroundWindowMonitor windowMonitor,
+            IMultiSourceContextDetector? multiSourceDetector = null)
         {
             // V1.0 Required Services
             _watcher = watcher ?? throw new ArgumentNullException(nameof(watcher));
@@ -60,10 +56,13 @@ namespace TelegramOrganizer.Core.Services
             _settingsService = settingsService ?? throw new ArgumentNullException(nameof(settingsService));
             _logger = loggingService ?? throw new ArgumentNullException(nameof(loggingService));
             
-            // V2.0 Required Services (no longer optional)
+            // V2.0 Required Services
             _sessionManager = sessionManager ?? throw new ArgumentNullException(nameof(sessionManager));
             _burstDetector = burstDetector ?? throw new ArgumentNullException(nameof(burstDetector));
             _windowMonitor = windowMonitor ?? throw new ArgumentNullException(nameof(windowMonitor));
+            
+            // Week 4: Optional multi-source detector
+            _multiSourceDetector = multiSourceDetector;
 
             // Subscribe to burst detection events
             _burstDetector.BurstStarted += OnBurstStarted;
@@ -79,9 +78,10 @@ namespace TelegramOrganizer.Core.Services
         {
             var settings = _settingsService.LoadSettings();
 
-            _logger.LogInfo($"=== Engine Starting (V2.0) ===");
+            _logger.LogInfo($"=== Engine Starting (V2.0 Week 4) ===");
             _logger.LogInfo($"Downloads Path: {settings.DownloadsFolderPath}");
             _logger.LogInfo($"Destination Path: {settings.DestinationBasePath}");
+            _logger.LogInfo($"Multi-Source Detector: {(_multiSourceDetector != null ? "Enabled" : "Disabled")}");
 
             // Validate Downloads folder
             if (!ValidateAndFixPaths(settings))
@@ -103,8 +103,8 @@ namespace TelegramOrganizer.Core.Services
                 _watcher.FileRenamed += OnFileRenamed;
                 _watcher.Start(settings.DownloadsFolderPath);
 
-                _logger.LogInfo($"Engine started (V2.0 mode)");
-                OperationCompleted?.Invoke(this, $"[ENGINE] Started V2.0 - Watching: {settings.DownloadsFolderPath}");
+                _logger.LogInfo($"Engine started (V2.0 Week 4 mode)");
+                OperationCompleted?.Invoke(this, $"[ENGINE] Started V2.0 Week 4 - Watching: {settings.DownloadsFolderPath}");
             }
             catch (DirectoryNotFoundException ex)
             {
@@ -248,19 +248,8 @@ namespace TelegramOrganizer.Core.Services
                     _logger.LogInfo($"[Burst] {e.FileName} is part of burst ({burstStatus.FileCount} files)");
                 }
 
-                string activeWindow = _contextDetector.GetActiveWindowTitle();
-                string processName = _contextDetector.GetProcessName();
-                
-                _logger.LogFileOperation("CREATED", e.FileName, 
-                    additionalInfo: $"Window: '{activeWindow}' | Process: {processName}");
-                
-                OperationCompleted?.Invoke(this, $"[DEBUG] File: {e.FileName} | Window: {activeWindow}");
-
-                string groupName = ExtractTelegramGroupName(activeWindow);
-                _logger.LogDebug($"Extracted group name: '{groupName}' from window: '{activeWindow}'");
-
-                // V2.0: Always use session manager (no fallback to V1.0)
-                _ = HandleFileCreatedWithSessionAsync(e.FileName, e.FullPath, groupName, activeWindow, processName);
+                // Week 4: Use multi-source detection if available
+                _ = HandleFileCreatedWithMultiSourceAsync(e.FileName, e.FullPath);
             }
             catch (Exception ex)
             {
@@ -269,21 +258,47 @@ namespace TelegramOrganizer.Core.Services
         }
 
         /// <summary>
-        /// V2.0: Handles file created event using session manager.
-        /// This solves the batch download problem by using a shared session context.
+        /// Week 4: Handles file created event using multi-source context detection.
+        /// Falls back to session-based detection if multi-source is unavailable.
         /// </summary>
-        private async Task HandleFileCreatedWithSessionAsync(string fileName, string fullPath, string groupName, string windowTitle, string processName)
+        private async Task HandleFileCreatedWithMultiSourceAsync(string fileName, string fullPath)
         {
             try
             {
+                string groupName;
+                double confidence = 1.0;
+                string detectionSource = "Session";
+
+                // Week 4: Try multi-source detection first
+                if (_multiSourceDetector != null)
+                {
+                    var result = await _multiSourceDetector.DetectContextWithDetailsAsync(fileName, DateTime.Now);
+                    groupName = result.DetectedContext;
+                    confidence = result.OverallConfidence;
+                    detectionSource = result.HasConsensus ? "MultiSource (Consensus)" : "MultiSource";
+                    
+                    _logger.LogInfo($"[Week4] Multi-source detection: '{groupName}' " +
+                                  $"(confidence: {confidence:F2}, signals: {result.ValidSignalCount})");
+                    
+                    OperationCompleted?.Invoke(this, 
+                        $"[MULTISOURCE] {fileName} → {groupName} ({confidence:P0} confidence)");
+                }
+                else
+                {
+                    // Fallback to foreground detection
+                    string activeWindow = _contextDetector.GetActiveWindowTitle();
+                    groupName = ExtractTelegramGroupName(activeWindow);
+                    detectionSource = "Foreground";
+                }
+
                 if (string.IsNullOrWhiteSpace(groupName))
                     groupName = "Unsorted";
 
-                // Add file to session (creates new session if needed)
+                // Add file to session
                 var session = await _sessionManager.AddFileToSessionAsync(fileName, groupName, fullPath, 0);
                 
                 _logger.LogInfo($"[V2.0] File '{fileName}' added to session #{session.Id} for '{groupName}' " +
-                              $"(session files: {session.FileCount})");
+                              $"(source: {detectionSource}, session files: {session.FileCount})");
                 
                 OperationCompleted?.Invoke(this, $"[SESSION] {fileName} → Session #{session.Id} ({groupName})");
 
@@ -294,7 +309,7 @@ namespace TelegramOrganizer.Core.Services
                     return;
                 }
 
-                // For direct downloads, organize immediately but use session context
+                // For direct downloads, organize immediately
                 _processingFiles.TryAdd(fileName, DateTime.Now);
 
                 await Task.Run(async () =>
@@ -307,8 +322,14 @@ namespace TelegramOrganizer.Core.Services
                         {
                             string result = _fileOrganizer.OrganizeFile(fullPath, session.GroupName);
                             _logger.LogFileOperation("ORGANIZED_V2", fileName, groupName: session.GroupName, 
-                                additionalInfo: $"Session #{session.Id} | {result}");
+                                additionalInfo: $"Session #{session.Id} | {detectionSource} | {result}");
                             OperationCompleted?.Invoke(this, $"[SUCCESS] {fileName} → {session.GroupName} (Session #{session.Id})");
+                            
+                            // Record feedback for pattern learning
+                            if (_multiSourceDetector != null)
+                            {
+                                await _multiSourceDetector.RecordFeedbackAsync(fileName, groupName, null, true);
+                            }
                         }
                         else
                         {
@@ -327,7 +348,7 @@ namespace TelegramOrganizer.Core.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError($"[V2.0] Error in HandleFileCreatedWithSessionAsync for: {fileName}", ex);
+                _logger.LogError($"[Week4] Error in HandleFileCreatedWithMultiSourceAsync for: {fileName}", ex);
             }
         }
 
@@ -338,7 +359,7 @@ namespace TelegramOrganizer.Core.Services
                 _logger.LogFileOperation("RENAMED", e.FileName, oldFileName: e.OldFileName);
                 OperationCompleted?.Invoke(this, $"[DEBUG] Rename: {e.OldFileName} -> {e.FileName}");
 
-                // V2.0: Always use session manager (no fallback to V1.0)
+                // V2.0: Use session manager for rename handling
                 _ = HandleFileRenamedWithSessionAsync(e.FileName, e.FullPath, e.OldFileName);
             }
             catch (Exception ex)
@@ -369,13 +390,22 @@ namespace TelegramOrganizer.Core.Services
                 {
                     _logger.LogWarning($"[V2.0] No active session for renamed file: {fileName}");
                     
-                    // Fallback to current window context
-                    string activeWindow = _contextDetector.GetActiveWindowTitle();
-                    string groupName = ExtractTelegramGroupName(activeWindow);
+                    // Week 4: Use multi-source detection as fallback
+                    string groupName;
+                    if (_multiSourceDetector != null)
+                    {
+                        groupName = await _multiSourceDetector.DetectContextAsync(fileName, DateTime.Now);
+                        _logger.LogInfo($"[Week4] Multi-source fallback: '{groupName}'");
+                    }
+                    else
+                    {
+                        string activeWindow = _contextDetector.GetActiveWindowTitle();
+                        groupName = ExtractTelegramGroupName(activeWindow);
+                    }
                     
                     if (!string.IsNullOrWhiteSpace(groupName) && groupName != "Unsorted")
                     {
-                        session = await _sessionManager.StartSessionAsync(groupName, activeWindow);
+                        session = await _sessionManager.StartSessionAsync(groupName, "Fallback");
                         await _sessionManager.AddFileToSessionAsync(fileName, groupName, fullPath, 0);
                     }
                     else
@@ -492,7 +522,6 @@ namespace TelegramOrganizer.Core.Services
         /// <summary>
         /// Extracts the group/channel name from Telegram window title.
         /// Handles Arabic, English, and mixed text properly.
-        /// Removes notification counts, emojis, and other metadata.
         /// </summary>
         private string ExtractTelegramGroupName(string windowTitle)
         {
@@ -515,7 +544,6 @@ namespace TelegramOrganizer.Core.Services
             title = Regex.Replace(title, @"\s*[–—-]\s*Telegram$", "", RegexOptions.IgnoreCase);
             
             // Remove emojis and symbols but keep Arabic, English, numbers, and common punctuation
-            // Arabic ranges: \u0600-\u06FF, \u0750-\u077F, \uFB50-\uFDFF, \uFE70-\uFEFF
             title = Regex.Replace(title, @"[^\u0600-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFFa-zA-Z0-9\s\-_\.]+", "");
             
             // Clean up whitespace and special chars

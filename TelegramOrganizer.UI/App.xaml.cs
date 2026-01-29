@@ -72,14 +72,21 @@ namespace TelegramOrganizer.UI
             services.AddSingleton<IBackgroundWindowMonitor, BackgroundWindowMonitor>();
             
             // ========================================
-            // 3. Legacy Services (For migration only)
+            // 3. Week 4: Multi-Source Context Detector
+            // ========================================
+            
+            // Multi-Source Context Detector - combines signals from multiple sources
+            services.AddSingleton<IMultiSourceContextDetector, MultiSourceContextDetector>();
+            
+            // ========================================
+            // 4. Legacy Services (For migration only)
             // ========================================
             
             // JSON Persistence - kept for migration from v1.0 to v2.0
             services.AddSingleton<IPersistenceService, JsonPersistenceService>();
 
             // ========================================
-            // 4. Main Engine (V2.0 - All services required)
+            // 5. Main Engine (V2.0 Week 4 - Multi-Source Detection)
             // ========================================
             
             services.AddSingleton<SmartOrganizerEngine>(sp =>
@@ -92,12 +99,13 @@ namespace TelegramOrganizer.UI
                     sp.GetRequiredService<ILoggingService>(),
                     sp.GetRequiredService<IDownloadSessionManager>(),
                     sp.GetRequiredService<IDownloadBurstDetector>(),
-                    sp.GetRequiredService<IBackgroundWindowMonitor>()
+                    sp.GetRequiredService<IBackgroundWindowMonitor>(),
+                    sp.GetRequiredService<IMultiSourceContextDetector>() // Week 4
                 );
             });
 
             // ========================================
-            // 5. Additional Services
+            // 6. Additional Services
             // ========================================
             
             // Update Service - checks for new versions
@@ -107,7 +115,7 @@ namespace TelegramOrganizer.UI
             services.AddSingleton<IErrorReportingService, ErrorReportingService>();
 
             // ========================================
-            // 6. ViewModels
+            // 7. ViewModels
             // ========================================
             
             services.AddTransient<MainViewModel>();
@@ -116,7 +124,7 @@ namespace TelegramOrganizer.UI
             services.AddTransient<StatisticsViewModel>();
 
             // ========================================
-            // 7. Views
+            // 8. Views
             // ========================================
             
             services.AddTransient<MainWindow>();
