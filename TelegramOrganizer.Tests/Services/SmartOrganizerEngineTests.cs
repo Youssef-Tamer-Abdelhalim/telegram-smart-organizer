@@ -10,18 +10,26 @@ namespace TelegramOrganizer.Tests.Services
         private readonly Mock<IFileWatcher> _mockWatcher;
         private readonly Mock<IContextDetector> _mockContextDetector;
         private readonly Mock<IFileOrganizer> _mockOrganizer;
-        private readonly Mock<IPersistenceService> _mockPersistence;
         private readonly Mock<ISettingsService> _mockSettings;
         private readonly Mock<ILoggingService> _mockLogger;
+        
+        // V2.0 Required Services
+        private readonly Mock<IDownloadSessionManager> _mockSessionManager;
+        private readonly Mock<IDownloadBurstDetector> _mockBurstDetector;
+        private readonly Mock<IBackgroundWindowMonitor> _mockWindowMonitor;
 
         public SmartOrganizerEngineTests()
         {
             _mockWatcher = new Mock<IFileWatcher>();
             _mockContextDetector = new Mock<IContextDetector>();
             _mockOrganizer = new Mock<IFileOrganizer>();
-            _mockPersistence = new Mock<IPersistenceService>();
             _mockSettings = new Mock<ISettingsService>();
             _mockLogger = new Mock<ILoggingService>();
+            
+            // V2.0 Services
+            _mockSessionManager = new Mock<IDownloadSessionManager>();
+            _mockBurstDetector = new Mock<IDownloadBurstDetector>();
+            _mockWindowMonitor = new Mock<IBackgroundWindowMonitor>();
 
             // Setup default settings
             _mockSettings.Setup(s => s.LoadSettings()).Returns(new AppSettings
@@ -31,9 +39,14 @@ namespace TelegramOrganizer.Tests.Services
                 RetentionDays = 30
             });
 
-            // Setup default persistence
-            _mockPersistence.Setup(p => p.LoadState()).Returns(new AppState());
-            _mockPersistence.Setup(p => p.CleanupOldEntries(It.IsAny<int>())).Returns(0);
+            // Setup V2.0 service defaults
+            _mockSessionManager.Setup(s => s.GetActiveSessionAsync())
+                .ReturnsAsync((DownloadSession?)null);
+            _mockSessionManager.Setup(s => s.CheckAndEndTimedOutSessionsAsync())
+                .ReturnsAsync(0);
+            
+            _mockBurstDetector.Setup(b => b.GetCurrentBurstStatus())
+                .Returns(new BurstDetectionResult { IsBurstActive = false });
         }
 
         private SmartOrganizerEngine CreateEngine()
@@ -42,9 +55,11 @@ namespace TelegramOrganizer.Tests.Services
                 _mockWatcher.Object,
                 _mockContextDetector.Object,
                 _mockOrganizer.Object,
-                _mockPersistence.Object,
                 _mockSettings.Object,
-                _mockLogger.Object
+                _mockLogger.Object,
+                _mockSessionManager.Object,
+                _mockBurstDetector.Object,
+                _mockWindowMonitor.Object
             );
         }
 
@@ -75,7 +90,7 @@ namespace TelegramOrganizer.Tests.Services
         }
 
         [Fact]
-        public void Start_LoadsPersistedState()
+        public void Start_StartsBackgroundWindowMonitor()
         {
             // Arrange
             var engine = CreateEngine();
@@ -84,20 +99,7 @@ namespace TelegramOrganizer.Tests.Services
             engine.Start();
 
             // Assert
-            _mockPersistence.Verify(p => p.LoadState(), Times.Once);
-        }
-
-        [Fact]
-        public void Start_CleansUpOldEntries()
-        {
-            // Arrange
-            var engine = CreateEngine();
-
-            // Act
-            engine.Start();
-
-            // Assert
-            _mockPersistence.Verify(p => p.CleanupOldEntries(30), Times.Once);
+            _mockWindowMonitor.Verify(w => w.Start(), Times.Once);
         }
 
         [Fact]
@@ -112,6 +114,34 @@ namespace TelegramOrganizer.Tests.Services
 
             // Assert
             _mockWatcher.Verify(w => w.Stop(), Times.Once);
+        }
+
+        [Fact]
+        public void Stop_StopsBackgroundWindowMonitor()
+        {
+            // Arrange
+            var engine = CreateEngine();
+            engine.Start();
+
+            // Act
+            engine.Stop();
+
+            // Assert
+            _mockWindowMonitor.Verify(w => w.Stop(), Times.Once);
+        }
+
+        [Fact]
+        public void Stop_EndsCurrentSession()
+        {
+            // Arrange
+            var engine = CreateEngine();
+            engine.Start();
+
+            // Act
+            engine.Stop();
+
+            // Assert
+            _mockSessionManager.Verify(s => s.EndCurrentSessionAsync(), Times.Once);
         }
 
         [Fact]
@@ -144,29 +174,67 @@ namespace TelegramOrganizer.Tests.Services
         }
 
         [Fact]
-        public void Start_RestoresPendingDownloads_FromPersistedState()
+        public void Constructor_ThrowsOnNullWatcher()
         {
-            // Arrange
-            var persistedState = new AppState();
-            persistedState.PendingDownloads["test.pdf.td"] = new FileContext
-            {
-                OriginalTempName = "test.pdf.td",
-                DetectedGroupName = "TestGroup"
-            };
-            
-            _mockPersistence.Setup(p => p.LoadState()).Returns(persistedState);
-            
-            // The file doesn't exist, so it should be removed
-            _mockPersistence.Setup(p => p.RemoveEntry(It.IsAny<string>()));
-            
-            var engine = CreateEngine();
-
-            // Act
-            engine.Start();
-
             // Assert
-            // Since file doesn't exist, it should try to remove the orphan entry
-            _mockPersistence.Verify(p => p.RemoveEntry("test.pdf.td"), Times.Once);
+            Assert.Throws<ArgumentNullException>(() => new SmartOrganizerEngine(
+                null!,
+                _mockContextDetector.Object,
+                _mockOrganizer.Object,
+                _mockSettings.Object,
+                _mockLogger.Object,
+                _mockSessionManager.Object,
+                _mockBurstDetector.Object,
+                _mockWindowMonitor.Object
+            ));
+        }
+
+        [Fact]
+        public void Constructor_ThrowsOnNullSessionManager()
+        {
+            // Assert
+            Assert.Throws<ArgumentNullException>(() => new SmartOrganizerEngine(
+                _mockWatcher.Object,
+                _mockContextDetector.Object,
+                _mockOrganizer.Object,
+                _mockSettings.Object,
+                _mockLogger.Object,
+                null!,
+                _mockBurstDetector.Object,
+                _mockWindowMonitor.Object
+            ));
+        }
+
+        [Fact]
+        public void Constructor_ThrowsOnNullBurstDetector()
+        {
+            // Assert
+            Assert.Throws<ArgumentNullException>(() => new SmartOrganizerEngine(
+                _mockWatcher.Object,
+                _mockContextDetector.Object,
+                _mockOrganizer.Object,
+                _mockSettings.Object,
+                _mockLogger.Object,
+                _mockSessionManager.Object,
+                null!,
+                _mockWindowMonitor.Object
+            ));
+        }
+
+        [Fact]
+        public void Constructor_ThrowsOnNullWindowMonitor()
+        {
+            // Assert
+            Assert.Throws<ArgumentNullException>(() => new SmartOrganizerEngine(
+                _mockWatcher.Object,
+                _mockContextDetector.Object,
+                _mockOrganizer.Object,
+                _mockSettings.Object,
+                _mockLogger.Object,
+                _mockSessionManager.Object,
+                _mockBurstDetector.Object,
+                null!
+            ));
         }
     }
 }

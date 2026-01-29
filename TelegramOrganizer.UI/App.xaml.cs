@@ -30,55 +30,95 @@ namespace TelegramOrganizer.UI
         {
             var services = new ServiceCollection();
 
-            // 1. Register Core Services (order matters for dependencies)
+            // ========================================
+            // 1. Core Infrastructure Services
+            // ========================================
             
-            // Logging Service - needed by all
+            // Logging Service - needed by all services
             services.AddSingleton<ILoggingService, FileLoggingService>();
             
             // Settings Service - needed by FileOrganizer and Engine
             services.AddSingleton<ISettingsService, JsonSettingsService>();
             
-            // Persistence Service - needed by Engine (v1.0 compatibility)
-            services.AddSingleton<IPersistenceService, JsonPersistenceService>();
-            
             // Rules Service - for custom organization rules
             services.AddSingleton<IRulesService, JsonRulesService>();
             
-            // Statistics Service - for tracking metrics
+            // Statistics Service - for tracking metrics (JSON for UI display)
             services.AddSingleton<IStatisticsService, JsonStatisticsService>();
             
-            // Context Detection
+            // Context Detection - Win32 API for window detection
             services.AddSingleton<IContextDetector, Win32ContextDetector>();
             
-            // File Watching
+            // File Watching - FileSystemWatcher wrapper
             services.AddSingleton<IFileWatcher, WindowsWatcherService>();
             
-            // File Organization - depends on ISettingsService, IRulesService, IStatisticsService
+            // File Organization - moves files to organized folders
             services.AddSingleton<IFileOrganizer, FileOrganizerService>();
+
+            // ========================================
+            // 2. V2.0 Required Services (No longer optional)
+            // ========================================
             
-            // V2.0: Phase 2 Week 3 Features (Optional - fully functional)
-            // These services are integrated but optional in SmartOrganizerEngine
+            // SQLite Database - primary data storage for v2.0
             services.AddSingleton<IDatabaseService, SQLiteDatabaseService>();
+            
+            // Download Session Manager - handles batch downloads
             services.AddSingleton<IDownloadSessionManager, DownloadSessionManager>();
+            
+            // Download Burst Detector - detects rapid file downloads
             services.AddSingleton<IDownloadBurstDetector, DownloadBurstDetector>();
+            
+            // Background Window Monitor - tracks Telegram windows in background
             services.AddSingleton<IBackgroundWindowMonitor, BackgroundWindowMonitor>();
             
-            // Main Engine - depends on all above services
-            services.AddSingleton<SmartOrganizerEngine>();
+            // ========================================
+            // 3. Legacy Services (For migration only)
+            // ========================================
+            
+            // JSON Persistence - kept for migration from v1.0 to v2.0
+            services.AddSingleton<IPersistenceService, JsonPersistenceService>();
 
-            // Update Service
+            // ========================================
+            // 4. Main Engine (V2.0 - All services required)
+            // ========================================
+            
+            services.AddSingleton<SmartOrganizerEngine>(sp =>
+            {
+                return new SmartOrganizerEngine(
+                    sp.GetRequiredService<IFileWatcher>(),
+                    sp.GetRequiredService<IContextDetector>(),
+                    sp.GetRequiredService<IFileOrganizer>(),
+                    sp.GetRequiredService<ISettingsService>(),
+                    sp.GetRequiredService<ILoggingService>(),
+                    sp.GetRequiredService<IDownloadSessionManager>(),
+                    sp.GetRequiredService<IDownloadBurstDetector>(),
+                    sp.GetRequiredService<IBackgroundWindowMonitor>()
+                );
+            });
+
+            // ========================================
+            // 5. Additional Services
+            // ========================================
+            
+            // Update Service - checks for new versions
             services.AddSingleton<IUpdateService, GitHubUpdateService>();
             
-            // Error Reporting Service
+            // Error Reporting Service - generates error logs
             services.AddSingleton<IErrorReportingService, ErrorReportingService>();
 
-            // 2. Register ViewModels
+            // ========================================
+            // 6. ViewModels
+            // ========================================
+            
             services.AddTransient<MainViewModel>();
             services.AddTransient<SettingsViewModel>();
             services.AddTransient<RulesViewModel>();
             services.AddTransient<StatisticsViewModel>();
 
-            // 3. Register Views
+            // ========================================
+            // 7. Views
+            // ========================================
+            
             services.AddTransient<MainWindow>();
             services.AddTransient<SettingsWindow>();
             services.AddTransient<RulesWindow>();
@@ -95,10 +135,10 @@ namespace TelegramOrganizer.UI
             // Log startup
             var logger = Services.GetRequiredService<ILoggingService>();
             logger.LogInfo("=== Application Starting ===");
-            logger.LogInfo("[Version] Phase 2 Week 3 - Background Window Monitor");
+            logger.LogInfo("[Version] V2.0 - Full Integration (All services required)");
 
-            // V2.0: Initialize database (optional - for advanced features)
-            _ = InitializeDatabaseAsync();
+            // V2.0: Initialize database and run migration
+            _ = InitializeDatabaseAndMigrateAsync();
 
             // Load settings to check for start minimized
             var settingsService = Services.GetRequiredService<ISettingsService>();
@@ -123,9 +163,10 @@ namespace TelegramOrganizer.UI
         }
 
         /// <summary>
-        /// V2.0: Initializes the SQLite database and runs migration if needed.
+        /// V2.0: Initializes the SQLite database and runs migration from JSON if needed.
+        /// This is the primary data initialization for the application.
         /// </summary>
-        private async Task InitializeDatabaseAsync()
+        private async Task InitializeDatabaseAndMigrateAsync()
         {
             try
             {
@@ -143,10 +184,11 @@ namespace TelegramOrganizer.UI
                 bool isValid = await database.CheckIntegrityAsync();
                 if (!isValid)
                 {
-                    logger.LogWarning("[V2.0] Database integrity check failed!");
+                    logger.LogWarning("[V2.0] Database integrity check failed! Attempting repair...");
+                    await database.RunMaintenanceAsync();
                 }
                 
-                // Run migration from JSON to SQLite
+                // Run migration from JSON to SQLite (one-time operation)
                 var migration = new TelegramOrganizer.Infra.Data.Migrations.JsonToSQLiteMigration(
                     database,
                     Services.GetRequiredService<IPersistenceService>(),
@@ -165,15 +207,31 @@ namespace TelegramOrganizer.UI
                 {
                     logger.LogInfo($"[V2.0] Migration: {result}");
                 }
-                else
+                else if (!result.AlreadyMigrated)
                 {
                     logger.LogError($"[V2.0] Migration failed: {result.Message}", null);
                 }
+                
+                // Log database stats
+                var dbSize = await database.GetDatabaseSizeAsync();
+                var schemaVersion = await database.GetSchemaVersionAsync();
+                logger.LogInfo($"[V2.0] Database ready - Size: {dbSize / 1024.0:F2} KB, Schema: v{schemaVersion}");
             }
             catch (Exception ex)
             {
                 var logger = Services.GetRequiredService<ILoggingService>();
                 logger.LogError("[V2.0] Failed to initialize database", ex);
+                
+                // Show error to user but don't crash
+                Current.Dispatcher.Invoke(() =>
+                {
+                    System.Windows.MessageBox.Show(
+                        $"Database initialization failed:\n\n{ex.Message}\n\n" +
+                        "The application will continue but some features may not work correctly.",
+                        "Database Error",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
+                });
             }
         }
 

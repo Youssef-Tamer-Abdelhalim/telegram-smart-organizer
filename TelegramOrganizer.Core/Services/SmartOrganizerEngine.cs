@@ -8,65 +8,78 @@ using TelegramOrganizer.Core.Models;
 
 namespace TelegramOrganizer.Core.Services
 {
+    /// <summary>
+    /// Main orchestration engine for the Telegram Smart Organizer.
+    /// V2.0: All services are now required - no optional fallbacks.
+    /// </summary>
     public class SmartOrganizerEngine
     {
+        // Required V1.0 Services
         private readonly IFileWatcher _watcher;
         private readonly IContextDetector _contextDetector;
         private readonly IFileOrganizer _fileOrganizer;
-        private readonly IPersistenceService _persistenceService;
         private readonly ISettingsService _settingsService;
         private readonly ILoggingService _logger;
-        private readonly IDownloadSessionManager? _sessionManager; // Optional v2.0 feature
-        private readonly IDownloadBurstDetector? _burstDetector; // V2.0: Burst detection
-        private readonly IBackgroundWindowMonitor? _windowMonitor; // V2.0: Background window monitoring
+        
+        // Required V2.0 Services (no longer optional)
+        private readonly IDownloadSessionManager _sessionManager;
+        private readonly IDownloadBurstDetector _burstDetector;
+        private readonly IBackgroundWindowMonitor _windowMonitor;
 
+        // Thread-safe tracking dictionaries
         private readonly ConcurrentDictionary<string, FileContext> _pendingDownloads = new();
         private readonly ConcurrentDictionary<string, DateTime> _processingFiles = new();
 
         public event EventHandler<string>? OperationCompleted;
 
+        /// <summary>
+        /// Creates a new SmartOrganizerEngine with all required V2.0 services.
+        /// </summary>
+        /// <param name="watcher">File system watcher service</param>
+        /// <param name="contextDetector">Window context detection service</param>
+        /// <param name="fileOrganizer">File organization service</param>
+        /// <param name="settingsService">Application settings service</param>
+        /// <param name="loggingService">Logging service</param>
+        /// <param name="sessionManager">V2.0: Download session manager (required)</param>
+        /// <param name="burstDetector">V2.0: Download burst detector (required)</param>
+        /// <param name="windowMonitor">V2.0: Background window monitor (required)</param>
         public SmartOrganizerEngine(
             IFileWatcher watcher,
             IContextDetector contextDetector,
             IFileOrganizer fileOrganizer,
-            IPersistenceService persistenceService,
             ISettingsService settingsService,
             ILoggingService loggingService,
-            IDownloadSessionManager? sessionManager = null, // Optional for v2.0
-            IDownloadBurstDetector? burstDetector = null, // V2.0: Optional burst detector
-            IBackgroundWindowMonitor? windowMonitor = null) // V2.0: Optional window monitor
+            IDownloadSessionManager sessionManager,
+            IDownloadBurstDetector burstDetector,
+            IBackgroundWindowMonitor windowMonitor)
         {
-            _watcher = watcher;
-            _contextDetector = contextDetector;
-            _fileOrganizer = fileOrganizer;
-            _persistenceService = persistenceService;
-            _settingsService = settingsService;
-            _logger = loggingService;
-            _sessionManager = sessionManager;
-            _burstDetector = burstDetector;
-            _windowMonitor = windowMonitor;
+            // V1.0 Required Services
+            _watcher = watcher ?? throw new ArgumentNullException(nameof(watcher));
+            _contextDetector = contextDetector ?? throw new ArgumentNullException(nameof(contextDetector));
+            _fileOrganizer = fileOrganizer ?? throw new ArgumentNullException(nameof(fileOrganizer));
+            _settingsService = settingsService ?? throw new ArgumentNullException(nameof(settingsService));
+            _logger = loggingService ?? throw new ArgumentNullException(nameof(loggingService));
+            
+            // V2.0 Required Services (no longer optional)
+            _sessionManager = sessionManager ?? throw new ArgumentNullException(nameof(sessionManager));
+            _burstDetector = burstDetector ?? throw new ArgumentNullException(nameof(burstDetector));
+            _windowMonitor = windowMonitor ?? throw new ArgumentNullException(nameof(windowMonitor));
 
-            // V2.0: Subscribe to burst events if detector available
-            if (_burstDetector != null)
-            {
-                _burstDetector.BurstStarted += OnBurstStarted;
-                _burstDetector.BurstContinued += OnBurstContinued;
-                _burstDetector.BurstEnded += OnBurstEnded;
-            }
+            // Subscribe to burst detection events
+            _burstDetector.BurstStarted += OnBurstStarted;
+            _burstDetector.BurstContinued += OnBurstContinued;
+            _burstDetector.BurstEnded += OnBurstEnded;
 
-            // V2.0: Subscribe to window monitor events
-            if (_windowMonitor != null)
-            {
-                _windowMonitor.WindowDetected += OnWindowDetected;
-                _windowMonitor.WindowActivated += OnWindowActivated;
-            }
+            // Subscribe to window monitor events
+            _windowMonitor.WindowDetected += OnWindowDetected;
+            _windowMonitor.WindowActivated += OnWindowActivated;
         }
 
         public void Start()
         {
             var settings = _settingsService.LoadSettings();
 
-            _logger.LogInfo($"=== Engine Starting ===");
+            _logger.LogInfo($"=== Engine Starting (V2.0) ===");
             _logger.LogInfo($"Downloads Path: {settings.DownloadsFolderPath}");
             _logger.LogInfo($"Destination Path: {settings.DestinationBasePath}");
 
@@ -78,20 +91,11 @@ namespace TelegramOrganizer.Core.Services
             }
 
             // V2.0: Start background window monitor
-            if (_windowMonitor != null)
-            {
-                _windowMonitor.Start();
-                _logger.LogInfo("[V2.0] Background window monitor started");
-            }
+            _windowMonitor.Start();
+            _logger.LogInfo("[V2.0] Background window monitor started");
 
-            LoadPersistedState(settings.DownloadsFolderPath);
-
-            int cleaned = _persistenceService.CleanupOldEntries(settings.RetentionDays);
-            if (cleaned > 0)
-            {
-                _logger.LogInfo($"Cleaned up {cleaned} old entries");
-                OperationCompleted?.Invoke(this, $"[CLEANUP] Removed {cleaned} old entries");
-            }
+            // V2.0: Start session timeout checker
+            _ = StartSessionTimeoutCheckerAsync();
 
             try
             {
@@ -99,8 +103,8 @@ namespace TelegramOrganizer.Core.Services
                 _watcher.FileRenamed += OnFileRenamed;
                 _watcher.Start(settings.DownloadsFolderPath);
 
-                _logger.LogInfo($"Engine started. Pending downloads: {_pendingDownloads.Count}");
-                OperationCompleted?.Invoke(this, $"[ENGINE] Started - Watching: {settings.DownloadsFolderPath}");
+                _logger.LogInfo($"Engine started (V2.0 mode)");
+                OperationCompleted?.Invoke(this, $"[ENGINE] Started V2.0 - Watching: {settings.DownloadsFolderPath}");
             }
             catch (DirectoryNotFoundException ex)
             {
@@ -111,6 +115,29 @@ namespace TelegramOrganizer.Core.Services
             {
                 _logger.LogError("Failed to start engine", ex);
                 OperationCompleted?.Invoke(this, $"[ERROR] {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// V2.0: Background task to check for timed-out sessions periodically.
+        /// </summary>
+        private async Task StartSessionTimeoutCheckerAsync()
+        {
+            while (true)
+            {
+                try
+                {
+                    await Task.Delay(10000); // Check every 10 seconds
+                    int timedOut = await _sessionManager.CheckAndEndTimedOutSessionsAsync();
+                    if (timedOut > 0)
+                    {
+                        _logger.LogInfo($"[V2.0] Ended {timedOut} timed-out session(s)");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError("[V2.0] Error in session timeout checker", ex);
+                }
             }
         }
 
@@ -190,45 +217,16 @@ namespace TelegramOrganizer.Core.Services
             _logger.LogInfo("Engine stopping...");
             
             // V2.0: Stop window monitor
-            if (_windowMonitor != null)
-            {
-                _windowMonitor.Stop();
-                _logger.LogInfo("[V2.0] Background window monitor stopped");
-            }
+            _windowMonitor.Stop();
+            _logger.LogInfo("[V2.0] Background window monitor stopped");
+            
+            // V2.0: End any active session
+            _ = _sessionManager.EndCurrentSessionAsync();
             
             _watcher.Stop();
             _watcher.FileCreated -= OnFileCreated;
             _watcher.FileRenamed -= OnFileRenamed;
             _logger.LogInfo("Engine stopped");
-        }
-
-        private void LoadPersistedState(string downloadsPath)
-        {
-            try
-            {
-                var state = _persistenceService.LoadState();
-                _logger.LogDebug($"Loaded state with {state.PendingDownloads.Count} entries");
-
-                foreach (var kvp in state.PendingDownloads)
-                {
-                    string fullPath = Path.Combine(downloadsPath, kvp.Key);
-                    if (File.Exists(fullPath))
-                    {
-                        _pendingDownloads.TryAdd(kvp.Key, kvp.Value);
-                        _logger.LogDebug($"Restored pending: {kvp.Key} -> {kvp.Value.DetectedGroupName}");
-                    }
-                    else
-                    {
-                        _persistenceService.RemoveEntry(kvp.Key);
-                        _logger.LogDebug($"Removed orphan: {kvp.Key}");
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError("Failed to load persisted state", ex);
-                OperationCompleted?.Invoke(this, $"[WARNING] Failed to load state: {ex.Message}");
-            }
         }
 
         private void OnFileCreated(object? sender, FileEventArgs e)
@@ -242,15 +240,12 @@ namespace TelegramOrganizer.Core.Services
                 }
 
                 // V2.0: Record file for burst detection
-                if (_burstDetector != null)
+                _burstDetector.RecordDownload(e.FileName);
+                
+                var burstStatus = _burstDetector.GetCurrentBurstStatus();
+                if (burstStatus.IsBurstActive)
                 {
-                    _burstDetector.RecordDownload(e.FileName);
-                    
-                    var burstStatus = _burstDetector.GetCurrentBurstStatus();
-                    if (burstStatus.IsBurstActive)
-                    {
-                        _logger.LogInfo($"[Burst] {e.FileName} is part of burst ({burstStatus.FileCount} files)");
-                    }
+                    _logger.LogInfo($"[Burst] {e.FileName} is part of burst ({burstStatus.FileCount} files)");
                 }
 
                 string activeWindow = _contextDetector.GetActiveWindowTitle();
@@ -264,79 +259,8 @@ namespace TelegramOrganizer.Core.Services
                 string groupName = ExtractTelegramGroupName(activeWindow);
                 _logger.LogDebug($"Extracted group name: '{groupName}' from window: '{activeWindow}'");
 
-                // V2.0: Use session manager if available
-                if (_sessionManager != null)
-                {
-                    _ = HandleFileCreatedWithSessionAsync(e.FileName, e.FullPath, groupName, activeWindow, processName);
-                    return;
-                }
-
-                // V1.0: Fallback to old behavior
-                var context = new FileContext
-                {
-                    OriginalTempName = e.FileName,
-                    DetectedGroupName = string.IsNullOrWhiteSpace(groupName) ? "Unsorted" : groupName
-                };
-
-                // Check if it's a direct download (non-temp file)
-                if (!IsTemporaryFile(e.FileName))
-                {
-                    _logger.LogInfo($"Direct download detected: {e.FileName} -> {context.DetectedGroupName}");
-                    
-                    // Mark as processing
-                    _processingFiles.TryAdd(e.FileName, DateTime.Now);
-                    
-                    // Also add to pending in case we need to track it
-                    _pendingDownloads.TryAdd(e.FileName, context);
-                    _persistenceService.AddOrUpdateEntry(e.FileName, context);
-                    
-                    Task.Run(async () =>
-                    {
-                        try
-                        {
-                            // Wait longer for file to be fully written (up to 2 minutes for large files)
-                            bool isReady = await WaitForFileReady(e.FullPath, 120000);
-                            
-                            if (isReady && File.Exists(e.FullPath))
-                            {
-                                string result = _fileOrganizer.OrganizeFile(e.FullPath, context.DetectedGroupName);
-                                _logger.LogFileOperation("ORGANIZED", e.FileName, groupName: context.DetectedGroupName, 
-                                    additionalInfo: result);
-                                OperationCompleted?.Invoke(this, $"[SUCCESS] {e.FileName} -> {context.DetectedGroupName}");
-                        
-                                // Cleanup
-                                _pendingDownloads.TryRemove(e.FileName, out _);
-                                _persistenceService.RemoveEntry(e.FileName);
-                            }
-                            else
-                            {
-                                _logger.LogWarning($"File not ready or doesn't exist: {e.FileName}");
-                                OperationCompleted?.Invoke(this, $"[PENDING] {e.FileName} - Still downloading...");
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogError($"Failed to organize direct download: {e.FileName}", ex);
-                        }
-                        finally
-                        {
-                            _processingFiles.TryRemove(e.FileName, out _);
-                        }
-                    });
-                    return;
-                }
-
-                // Temporary file - add to tracking
-                bool added = _pendingDownloads.TryAdd(e.FileName, context);
-                _logger.LogFileOperation("TRACKING", e.FileName, groupName: context.DetectedGroupName,
-                    additionalInfo: $"Added to pending: {added} | Total pending: {_pendingDownloads.Count}");
-
-                if (added)
-                {
-                    _persistenceService.AddOrUpdateEntry(e.FileName, context);
-                }
-
-                OperationCompleted?.Invoke(this, $"[TRACKING] {e.FileName} (Group: {groupName})");
+                // V2.0: Always use session manager (no fallback to V1.0)
+                _ = HandleFileCreatedWithSessionAsync(e.FileName, e.FullPath, groupName, activeWindow, processName);
             }
             catch (Exception ex)
             {
@@ -356,7 +280,7 @@ namespace TelegramOrganizer.Core.Services
                     groupName = "Unsorted";
 
                 // Add file to session (creates new session if needed)
-                var session = await _sessionManager!.AddFileToSessionAsync(fileName, groupName, fullPath, 0);
+                var session = await _sessionManager.AddFileToSessionAsync(fileName, groupName, fullPath, 0);
                 
                 _logger.LogInfo($"[V2.0] File '{fileName}' added to session #{session.Id} for '{groupName}' " +
                               $"(session files: {session.FileCount})");
@@ -414,95 +338,8 @@ namespace TelegramOrganizer.Core.Services
                 _logger.LogFileOperation("RENAMED", e.FileName, oldFileName: e.OldFileName);
                 OperationCompleted?.Invoke(this, $"[DEBUG] Rename: {e.OldFileName} -> {e.FileName}");
 
-                // V2.0: Use session manager if available
-                if (_sessionManager != null)
-                {
-                    _ = HandleFileRenamedWithSessionAsync(e.FileName, e.FullPath, e.OldFileName);
-                    return;
-                }
-
-                // V1.0: Fallback to old behavior
-                // Handle temp file renames (still downloading)
-                if (IsTemporaryFile(e.FileName))
-                {
-                    if (_pendingDownloads.TryRemove(e.OldFileName ?? "", out FileContext? tempContext) && tempContext != null)
-                    {
-                        tempContext.OriginalTempName = e.FileName;
-                        _pendingDownloads.TryAdd(e.FileName, tempContext);
-
-                        _persistenceService.RemoveEntry(e.OldFileName ?? "");
-                        _persistenceService.AddOrUpdateEntry(e.FileName, tempContext);
-
-                        _logger.LogDebug($"Updated temp tracking: {e.OldFileName} -> {e.FileName}");
-                        OperationCompleted?.Invoke(this, $"[UPDATE] Still downloading: {e.FileName}");
-                    }
-                    return;
-                }
-
-                // Final file - try to find in pending
-                if (_pendingDownloads.TryRemove(e.OldFileName ?? "", out FileContext? finalContext) && finalContext != null)
-                {
-                    _logger.LogInfo($"Found in pending: {e.OldFileName} -> organizing to {finalContext.DetectedGroupName}");
-                    
-                    Task.Run(async () =>
-                    {
-                        try
-                        {
-                            bool isReady = await WaitForFileReady(e.FullPath, 30000);
-                            
-                            if (isReady && File.Exists(e.FullPath))
-                            {
-                                string result = _fileOrganizer.OrganizeFile(e.FullPath, finalContext.DetectedGroupName);
-                                _persistenceService.RemoveEntry(e.OldFileName ?? "");
-                                
-                                _logger.LogFileOperation("ORGANIZED", e.FileName, oldFileName: e.OldFileName,
-                                    groupName: finalContext.DetectedGroupName, additionalInfo: result);
-                                OperationCompleted?.Invoke(this, $"[SUCCESS] {e.FileName} -> {finalContext.DetectedGroupName}");
-                            }
-                            else
-                            {
-                                _logger.LogWarning($"File not ready after rename: {e.FileName}");
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogError($"Failed to organize after rename: {e.FileName}", ex);
-                        }
-                    });
-                }
-                else
-                {
-                    // Not in pending - try with current context
-                    _logger.LogDebug($"File not in pending list: {e.OldFileName}");
-                    
-                    string activeWindow = _contextDetector.GetActiveWindowTitle();
-                    string groupName = ExtractTelegramGroupName(activeWindow);
-                    
-                    if (!string.IsNullOrWhiteSpace(groupName) && groupName != "Unsorted")
-                    {
-                        _logger.LogDebug($"Fallback - using current window: '{groupName}'");
-                        
-                        Task.Run(async () =>
-                        {
-                            try
-                            {
-                                bool isReady = await WaitForFileReady(e.FullPath, 30000);
-                                
-                                if (isReady && File.Exists(e.FullPath))
-                                {
-                                    string result = _fileOrganizer.OrganizeFile(e.FullPath, groupName);
-                                    _logger.LogFileOperation("ORGANIZED_FALLBACK", e.FileName, 
-                                        groupName: groupName, additionalInfo: result);
-                                    OperationCompleted?.Invoke(this, $"[SUCCESS] {e.FileName} -> {groupName}");
-                                }
-                            }
-                            catch (Exception ex)
-                            {
-                                _logger.LogError($"Failed fallback organize: {e.FileName}", ex);
-                            }
-                        });
-                    }
-                }
+                // V2.0: Always use session manager (no fallback to V1.0)
+                _ = HandleFileRenamedWithSessionAsync(e.FileName, e.FullPath, e.OldFileName);
             }
             catch (Exception ex)
             {
@@ -526,7 +363,7 @@ namespace TelegramOrganizer.Core.Services
                 }
 
                 // Final file - get group from active session
-                var session = await _sessionManager!.GetActiveSessionAsync();
+                var session = await _sessionManager.GetActiveSessionAsync();
                 
                 if (session == null)
                 {
