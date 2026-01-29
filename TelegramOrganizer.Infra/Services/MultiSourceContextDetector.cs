@@ -298,6 +298,7 @@ namespace TelegramOrganizer.Infra.Services
             var session = await _sessionManager.GetActiveSessionAsync();
             if (session == null)
             {
+                _logger.LogDebug("[MultiSource] Session: No active session found");
                 return null;
             }
 
@@ -306,10 +307,22 @@ namespace TelegramOrganizer.Infra.Services
             var agePenalty = Math.Max(0, 1 - (sessionAge / (session.TimeoutSeconds * 2)));
             var adjustedConfidence = session.ConfidenceScore * agePenalty;
 
+            _logger.LogInfo($"[MultiSource] Session #{session.Id} analysis:");
+            _logger.LogInfo($"[MultiSource]   Group: '{session.GroupName}'");
+            _logger.LogInfo($"[MultiSource]   Files: {session.FileCount}");
+            _logger.LogInfo($"[MultiSource]   Age: {sessionAge:F1}s (timeout: {session.TimeoutSeconds}s)");
+            _logger.LogInfo($"[MultiSource]   Base Confidence: {session.ConfidenceScore:F2}");
+            _logger.LogInfo($"[MultiSource]   Age Penalty: {agePenalty:F2} (formula: 1 - {sessionAge:F1}/{session.TimeoutSeconds * 2})");
+            _logger.LogInfo($"[MultiSource]   Adjusted Confidence: {adjustedConfidence:F2}");
+            _logger.LogInfo($"[MultiSource]   Min Threshold: {MinimumConfidenceThreshold:F2}");
+
             if (adjustedConfidence < MinimumConfidenceThreshold)
             {
+                _logger.LogWarning($"[MultiSource] Session #{session.Id} FILTERED OUT: confidence {adjustedConfidence:F2} < threshold {MinimumConfidenceThreshold:F2}");
                 return null;
             }
+
+            _logger.LogInfo($"[MultiSource] Session #{session.Id} ACCEPTED with confidence {adjustedConfidence:F2}");
 
             return new ContextSignal
             {
@@ -364,32 +377,44 @@ namespace TelegramOrganizer.Infra.Services
                     bool shouldBoost = false;
                     
                     // Scenario 1: Foreground is weak or missing (user switched to non-Telegram app)
+                    // In this case, boost the session to maintain batch consistency
                     double foregroundPower = foregroundSignal?.GetVotingPower() ?? 0;
                     bool foregroundWeak = foregroundPower < ForegroundWeakThreshold;
 
                     if (foregroundWeak)
                     {
+                        // User is NOT in Telegram - apply boost to maintain batch
                         shouldBoost = true;
                         boostReason = foregroundSignal == null 
-                            ? "Foreground missing (user switched apps)" 
-                            : $"Foreground weak (power: {foregroundPower:F2} < threshold: {ForegroundWeakThreshold:F2})";
+                            ? "Foreground missing (user switched apps) - maintaining batch consistency" 
+                            : $"Foreground weak (power: {foregroundPower:F2} < threshold: {ForegroundWeakThreshold:F2}) - maintaining batch consistency";
+                        
+                        _logger.LogInfo($"[MultiSource] Session Priority Boost: User switched away from Telegram during batch");
                     }
                     // Scenario 2: Foreground is strong Telegram but DIFFERENT group than session
-                    // This handles the case where user switches to different Telegram group during batch download
+                    // This is the CRITICAL decision point:
+                    // - If user is in a different Telegram group, they likely started a NEW batch
+                    // - We should NOT boost - let the foreground (new group) win
+                    // - The session manager will handle ending the old session and starting a new one
                     else if (foregroundSignal != null && 
                              !string.IsNullOrEmpty(foregroundSignal.DetectedContext) &&
                              !foregroundSignal.DetectedContext.Equals(sessionSignal.DetectedContext, 
                                                                       StringComparison.OrdinalIgnoreCase))
                     {
-                        // User switched to different Telegram group during batch download
-                        // Maintain session consistency - don't let new group take over mid-batch
-                        shouldBoost = true;
-                        boostReason = $"Group mismatch detected - Session: '{sessionSignal.DetectedContext}', " +
-                                     $"Foreground: '{foregroundSignal.DetectedContext}' - maintaining batch consistency";
+                        // User is in Telegram but looking at a DIFFERENT group
+                        // This indicates a NEW BATCH, not a continuation of the old batch
+                        // DO NOT BOOST - let the foreground win
                         
+                        _logger.LogInfo($"[MultiSource] Session Priority Boost: Group mismatch detected");
+                        _logger.LogInfo($"[MultiSource]   Session: '{sessionSignal.DetectedContext}'");
+                        _logger.LogInfo($"[MultiSource]   Foreground: '{foregroundSignal.DetectedContext}'");
+                        _logger.LogInfo($"[MultiSource]   Decision: NO BOOST - User is actively viewing different group (new batch)");
                         _logger.LogWarning($"[MultiSource] User switched from '{sessionSignal.DetectedContext}' " +
-                                         $"to '{foregroundSignal.DetectedContext}' during active batch download - " +
-                                         $"applying session lock to prevent file misdirection");
+                                         $"to '{foregroundSignal.DetectedContext}' in Telegram - " +
+                                         $"treating as NEW batch start (not continuing old batch)");
+                        
+                        // Do NOT boost - let the new foreground group win
+                        shouldBoost = false;
                     }
 
                     if (shouldBoost)

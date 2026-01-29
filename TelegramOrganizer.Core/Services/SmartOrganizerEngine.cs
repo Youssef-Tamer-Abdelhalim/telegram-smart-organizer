@@ -265,6 +265,8 @@ namespace TelegramOrganizer.Core.Services
         {
             try
             {
+                _logger.LogInfo($"[Engine] ========== FILE DETECTED: {fileName} ==========");
+                
                 string groupName;
                 double confidence = 1.0;
                 string detectionSource = "Session";
@@ -272,13 +274,29 @@ namespace TelegramOrganizer.Core.Services
                 // Week 4: Try multi-source detection first
                 if (_multiSourceDetector != null)
                 {
+                    _logger.LogInfo($"[Engine] Using multi-source detection...");
                     var result = await _multiSourceDetector.DetectContextWithDetailsAsync(fileName, DateTime.Now);
                     groupName = result.DetectedContext;
                     confidence = result.OverallConfidence;
                     detectionSource = result.HasConsensus ? "MultiSource (Consensus)" : "MultiSource";
                     
-                    _logger.LogInfo($"[Week4] Multi-source detection: '{groupName}' " +
-                                  $"(confidence: {confidence:F2}, signals: {result.ValidSignalCount})");
+                    _logger.LogInfo($"[Engine] Multi-source result:");
+                    _logger.LogInfo($"[Engine]   Detected Group: '{groupName}'");
+                    _logger.LogInfo($"[Engine]   Confidence: {confidence:F2}");
+                    _logger.LogInfo($"[Engine]   Signals: {result.ValidSignalCount}");
+                    _logger.LogInfo($"[Engine]   Consensus: {result.HasConsensus}");
+                    _logger.LogInfo($"[Engine]   Boost Applied: {result.SessionBoostApplied}");
+                    if (result.SessionBoostApplied)
+                    {
+                        _logger.LogInfo($"[Engine]   Boost Reason: {result.SessionBoostReason}");
+                    }
+                    
+                    // Log signal breakdown
+                    foreach (var signal in result.Signals)
+                    {
+                        _logger.LogInfo($"[Engine]   Signal[{signal.Source}]: '{signal.DetectedContext}' " +
+                                      $"(power: {signal.GetVotingPower():F3}, boosted: {signal.WasBoosted})");
+                    }
                     
                     OperationCompleted?.Invoke(this, 
                         $"[MULTISOURCE] {fileName} → {groupName} ({confidence:P0} confidence)");
@@ -286,26 +304,40 @@ namespace TelegramOrganizer.Core.Services
                 else
                 {
                     // Fallback to foreground detection
+                    _logger.LogInfo($"[Engine] Multi-source not available, using foreground detection");
                     string activeWindow = _contextDetector.GetActiveWindowTitle();
                     groupName = ExtractTelegramGroupName(activeWindow);
                     detectionSource = "Foreground";
+                    _logger.LogInfo($"[Engine]   Window: '{activeWindow}'");
+                    _logger.LogInfo($"[Engine]   Extracted Group: '{groupName}'");
                 }
 
                 if (string.IsNullOrWhiteSpace(groupName))
                     groupName = "Unsorted";
 
+                _logger.LogInfo($"[Engine] Final group for '{fileName}': '{groupName}' (source: {detectionSource})");
+
                 // Add file to session
+                _logger.LogInfo($"[Engine] Adding file to session...");
                 var session = await _sessionManager.AddFileToSessionAsync(fileName, groupName, fullPath, 0);
                 
-                _logger.LogInfo($"[V2.0] File '{fileName}' added to session #{session.Id} for '{groupName}' " +
-                              $"(source: {detectionSource}, session files: {session.FileCount})");
+                _logger.LogInfo($"[Engine] Session result:");
+                _logger.LogInfo($"[Engine]   Session ID: #{session.Id}");
+                _logger.LogInfo($"[Engine]   Session Group: '{session.GroupName}'");
+                _logger.LogInfo($"[Engine]   Session Files: {session.FileCount}");
                 
-                OperationCompleted?.Invoke(this, $"[SESSION] {fileName} → Session #{session.Id} ({groupName})");
+                // Check if session group matches detected group
+                if (session.GroupName != groupName)
+                {
+                    _logger.LogWarning($"[Engine] MISMATCH: Detected '{groupName}' but session is '{session.GroupName}'");
+                }
+                
+                OperationCompleted?.Invoke(this, $"[SESSION] {fileName} → Session #{session.Id} ({session.GroupName})");
 
                 // For temporary files, just track in session
                 if (IsTemporaryFile(fileName))
                 {
-                    _logger.LogDebug($"[V2.0] Temporary file tracked in session #{session.Id}");
+                    _logger.LogDebug($"[Engine] Temporary file tracked in session #{session.Id}");
                     return;
                 }
 
@@ -320,6 +352,7 @@ namespace TelegramOrganizer.Core.Services
                         
                         if (isReady && File.Exists(fullPath))
                         {
+                            _logger.LogInfo($"[Engine] Organizing '{fileName}' to '{session.GroupName}'");
                             string result = _fileOrganizer.OrganizeFile(fullPath, session.GroupName);
                             _logger.LogFileOperation("ORGANIZED_V2", fileName, groupName: session.GroupName, 
                                 additionalInfo: $"Session #{session.Id} | {detectionSource} | {result}");
@@ -333,12 +366,12 @@ namespace TelegramOrganizer.Core.Services
                         }
                         else
                         {
-                            _logger.LogWarning($"[V2.0] File not ready: {fileName}");
+                            _logger.LogWarning($"[Engine] File not ready: {fileName}");
                         }
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogError($"[V2.0] Failed to organize: {fileName}", ex);
+                        _logger.LogError($"[Engine] Failed to organize: {fileName}", ex);
                     }
                     finally
                     {
@@ -348,7 +381,7 @@ namespace TelegramOrganizer.Core.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError($"[Week4] Error in HandleFileCreatedWithMultiSourceAsync for: {fileName}", ex);
+                _logger.LogError($"[Engine] Error in HandleFileCreatedWithMultiSourceAsync for: {fileName}", ex);
             }
         }
 

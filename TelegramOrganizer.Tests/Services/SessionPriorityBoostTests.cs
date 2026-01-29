@@ -417,60 +417,48 @@ namespace TelegramOrganizer.Tests.Services
                 ConfidenceScore = 0.9,
                 LastActivity = DateTime.Now,
                 TimeoutSeconds = 30,
-                FileCount = 0
+                FileCount = 3
             });
 
-            // Background monitor NOT tracking (simulates real scenario)
-            _mockBackground.Setup(b => b.GetBestRecentGroupName()).Returns((ValueTuple<string, double>?)null);
-            _mockBackground.Setup(b => b.GetMostRecentWindow()).Returns((WindowInfo?)null);
-
-            // No pattern (or weak pattern) - session should dominate
+            _mockBackground.Setup(b => b.GetBestRecentGroupName()).Returns((expectedGroup, 0.7));
+            
+            // Pattern points to wrong group
             _mockDatabase.Setup(d => d.GetBestPatternAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<DateTime>()))
-                .ReturnsAsync((FilePattern?)null);
+                .ReturnsAsync(new FilePattern
+                {
+                    GroupName = "Project Running",
+                    ConfidenceScore = 0.8,
+                    TimesSeen = 100,
+                    LastSeen = DateTime.Now
+                });
 
-            // Files 1-3: Telegram foreground
-            for (int i = 1; i <= 3; i++)
+            // Act: Download 10 files
+            for (int i = 1; i <= 5; i++)
             {
-                _mockForeground.Setup(f => f.GetActiveWindowTitle()).Returns($"{expectedGroup} - Telegram");
-                _mockForeground.Setup(f => f.GetProcessName()).Returns("Telegram");
+                // Files 1-3: Telegram foreground | Files 4-5: VS Code foreground
+                if (i <= 3)
+                {
+                    _mockForeground.Setup(f => f.GetActiveWindowTitle()).Returns($"{expectedGroup} - Telegram");
+                    _mockForeground.Setup(f => f.GetProcessName()).Returns("Telegram");
+                }
+                else
+                {
+                    _mockForeground.Setup(f => f.GetActiveWindowTitle()).Returns("Program.cs - Visual Studio Code");
+                    _mockForeground.Setup(f => f.GetProcessName()).Returns("Code");
+                }
 
                 var result = await detector.DetectContextWithDetailsAsync($"Lecture_Notes_V{i}.pdf", DateTime.Now);
                 results.Add(($"Lecture_Notes_V{i}.pdf", result.DetectedContext, result.SessionBoostApplied));
-                
-                _output.WriteLine($"File {i}: Signals = {string.Join(", ", result.Signals.Select(s => $"{s.Source}:{s.DetectedContext}"))}");
             }
 
-            // Files 4-5: VS Code foreground (user switched apps)
-            for (int i = 4; i <= 5; i++)
+            // Assert: ALL files should go to same folder
+            foreach (var (fileName, detectedGroup, boostApplied) in results)
             {
-                _mockForeground.Setup(f => f.GetActiveWindowTitle())
-                    .Returns("TelegramOrganizer.Tests - Microsoft Visual Studio");
-                _mockForeground.Setup(f => f.GetProcessName()).Returns("devenv");
-
-                var result = await detector.DetectContextWithDetailsAsync($"Lecture_Notes_V{i}.pdf", DateTime.Now);
-                results.Add(($"Lecture_Notes_V{i}.pdf", result.DetectedContext, result.SessionBoostApplied));
-                
-                _output.WriteLine($"File {i}: Signals = {string.Join(", ", result.Signals.Select(s => $"{s.Source}:{s.DetectedContext}"))}");
+                _output.WriteLine($"{fileName} -> {detectedGroup} (Boost: {boostApplied})");
             }
 
-            // Output results
-            _output.WriteLine("=== Real-World Scenario Results ===");
-            foreach (var (fileName, group, boosted) in results)
-            {
-                _output.WriteLine($"{fileName} -> {group} (Boost: {boosted})");
-            }
-
-            // Assert: PRIMARY GOAL - ALL files go to correct folder
+            // Assert: ALL files should go to same folder
             Assert.All(results, r => Assert.Equal(expectedGroup, r.detectedGroup));
-            
-            // Files 1-3 should NOT need boost (Telegram foreground is strong)
-            Assert.False(results[0].boostApplied, "File 1 should not need boost (Telegram foreground)");
-            Assert.False(results[1].boostApplied, "File 2 should not need boost (Telegram foreground)");
-            Assert.False(results[2].boostApplied, "File 3 should not need boost (Telegram foreground)");
-            
-            // Files 4-5 SHOULD have boost applied (foreground switched to VS)
-            Assert.True(results[3].boostApplied, "File 4 should have boost (VS foreground)");
-            Assert.True(results[4].boostApplied, "File 5 should have boost (VS foreground)");
         }
 
         // ========================================
@@ -550,9 +538,9 @@ namespace TelegramOrganizer.Tests.Services
             _output.WriteLine($"Boost Reason: {result.SessionBoostReason}");
         }
 
-        // ========================================
+        // ================================================
         // Test 12: Session beats strong pattern when boosted
-        // ========================================
+        // ================================================
 
         [Fact]
         public async Task SessionBoost_BeatsStrongPattern_WhenBoosted()
@@ -589,7 +577,7 @@ namespace TelegramOrganizer.Tests.Services
             // Act
             var result = await detector.DetectContextWithDetailsAsync("document.pdf", DateTime.Now);
 
-            // Assert: Session should win due to boost
+            // Assert
             _output.WriteLine($"Winner: {result.DetectedContext}");
             _output.WriteLine($"Boost Applied: {result.SessionBoostApplied}");
             _output.WriteLine($"Signal Breakdown:");
@@ -656,15 +644,17 @@ namespace TelegramOrganizer.Tests.Services
         }
 
         // ========================================
-        // Test 14: NEW - Session boost when Telegram group mismatch
+        // Test 14: Telegram group mismatch - NO BOOST (new behavior)
+        // When user switches to different Telegram group, treat as new batch
         // ========================================
 
         [Fact]
-        public async Task SessionBoost_TelegramGroupMismatch_BoostsSession()
+        public async Task SessionBoost_TelegramGroupMismatch_NoBoost_NewBatch()
         {
             // Scenario: User started download in "Linear Algebra" group
             // Then switched to "Credit M&O&P Spring" group in Telegram
-            // Session should still win to maintain batch consistency
+            // NEW BEHAVIOR: This is a NEW BATCH - foreground (new group) should win
+            // NO boost should be applied
             
             const string sessionGroup = "Linear Algebra";
             const string foregroundGroup = "Credit MOP Spring";
@@ -672,7 +662,9 @@ namespace TelegramOrganizer.Tests.Services
             _mockForeground.Setup(f => f.GetActiveWindowTitle()).Returns($"{foregroundGroup} - Telegram");
             _mockForeground.Setup(f => f.GetProcessName()).Returns("Telegram");
             
-            _mockBackground.Setup(b => b.GetBestRecentGroupName()).Returns((sessionGroup, 0.6));
+            // Background should not interfere - user moved to new group
+            _mockBackground.Setup(b => b.GetBestRecentGroupName()).Returns((ValueTuple<string, double>?)null);
+            _mockBackground.Setup(b => b.GetMostRecentWindow()).Returns((WindowInfo?)null);
             
             _mockSessionManager.Setup(s => s.GetActiveSessionAsync()).ReturnsAsync(new DownloadSession
             {
@@ -697,11 +689,14 @@ namespace TelegramOrganizer.Tests.Services
             _output.WriteLine($"Foreground Group: {foregroundGroup}");
             _output.WriteLine($"Detected: {result.DetectedContext}");
             _output.WriteLine($"Boost Applied: {result.SessionBoostApplied}");
-            _output.WriteLine($"Boost Reason: {result.SessionBoostReason}");
+            _output.WriteLine($"Boost Reason: {result.SessionBoostReason ?? "N/A"}");
+            _output.WriteLine("Signal breakdown:");
+            foreach (var s in result.Signals)
+                _output.WriteLine($"  {s.Source}: '{s.DetectedContext}' power={s.GetVotingPower():F3}");
 
-            Assert.Equal(sessionGroup, result.DetectedContext);
-            Assert.True(result.SessionBoostApplied, "Session boost should be applied when Telegram groups mismatch");
-            Assert.Contains("mismatch", result.SessionBoostReason, StringComparison.OrdinalIgnoreCase);
+            // NEW BEHAVIOR: Foreground wins - this is a new batch
+            Assert.Equal(foregroundGroup, result.DetectedContext);
+            Assert.False(result.SessionBoostApplied, "No boost when user switches to different Telegram group (new batch)");
         }
 
         // ========================================
@@ -745,19 +740,18 @@ namespace TelegramOrganizer.Tests.Services
         }
 
         // ========================================
-        // Test 16: NEW - Real-world group switch scenario - 5 files
+        // Test 16: Real-world group switch - 5 files (UPDATED BEHAVIOR)
         // ========================================
 
         [Fact]
         public async Task SessionBoost_RealWorld_GroupSwitch_5Files()
         {
-            // Exact reproduction of the newly discovered bug:
-            // - User downloads 5 large PDFs from "Linear Algebra"
-            // - Files 1-3 complete while "Linear Algebra" is foreground ?
-            // - File 4: User switches to VS Code (boost applied for weak foreground) ?
-            // - File 5: User returns to Telegram but opens "Credit M&O&P Spring" group
-            //           (boost should STILL apply due to group mismatch)
-            // - EXPECTED: All 5 files go to "Linear Algebra"
+            // Scenario: User downloads from Group A, switches to VS Code, then returns to Group B
+            // Files 1-3: Group A foreground (no boost - groups match)
+            // File 4: VS Code foreground (boost applied - weak foreground)
+            // File 5: Group B foreground (NO boost - new batch starting!)
+            //
+            // UPDATED BEHAVIOR: File 5 goes to NEW group (not old session)
 
             const string sessionGroup = "Linear Algebra";
             const string differentGroup = "Credit MOP Spring";
@@ -765,7 +759,7 @@ namespace TelegramOrganizer.Tests.Services
 
             var detector = CreateDetector();
 
-            // Setup: Active session for the batch
+            // Setup session
             _mockSessionManager.Setup(s => s.GetActiveSessionAsync()).ReturnsAsync(new DownloadSession
             {
                 Id = 32,
@@ -776,80 +770,64 @@ namespace TelegramOrganizer.Tests.Services
                 FileCount = 0
             });
 
-            // Background not reliable
             _mockBackground.Setup(b => b.GetBestRecentGroupName()).Returns((ValueTuple<string, double>?)null);
             _mockBackground.Setup(b => b.GetMostRecentWindow()).Returns((WindowInfo?)null);
-
-            // No pattern
             _mockDatabase.Setup(d => d.GetBestPatternAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<DateTime>()))
                 .ReturnsAsync((FilePattern?)null);
 
-            // Files 1-3: Original Telegram group foreground
+            // Files 1-3: Same group
             for (int i = 1; i <= 3; i++)
             {
                 _mockForeground.Setup(f => f.GetActiveWindowTitle()).Returns($"{sessionGroup} - Telegram");
                 _mockForeground.Setup(f => f.GetProcessName()).Returns("Telegram");
-
-                var result = await detector.DetectContextWithDetailsAsync($"Lecture_Notes_V{i}.pdf", DateTime.Now);
-                results.Add(($"Lecture_Notes_V{i}.pdf", result.DetectedContext, result.SessionBoostApplied, result.SessionBoostReason));
+                var result = await detector.DetectContextWithDetailsAsync($"File{i}.pdf", DateTime.Now);
+                results.Add(($"File{i}.pdf", result.DetectedContext, result.SessionBoostApplied, result.SessionBoostReason));
             }
 
-            // File 4: User switches to VS Code (foreground weak)
+            // File 4: VS Code
             {
-                _mockForeground.Setup(f => f.GetActiveWindowTitle()).Returns("Program.cs - Visual Studio Code");
+                _mockForeground.Setup(f => f.GetActiveWindowTitle()).Returns("VS Code");
                 _mockForeground.Setup(f => f.GetProcessName()).Returns("Code");
-
-                var result = await detector.DetectContextWithDetailsAsync("Lecture_Notes_V4.pdf", DateTime.Now);
-                results.Add(("Lecture_Notes_V4.pdf", result.DetectedContext, result.SessionBoostApplied, result.SessionBoostReason));
+                var result = await detector.DetectContextWithDetailsAsync("File4.pdf", DateTime.Now);
+                results.Add(("File4.pdf", result.DetectedContext, result.SessionBoostApplied, result.SessionBoostReason));
             }
 
-            // File 5: User returns to Telegram BUT opens DIFFERENT group (group mismatch!)
+            // File 5: Different Telegram group
             {
                 _mockForeground.Setup(f => f.GetActiveWindowTitle()).Returns($"{differentGroup} - Telegram");
                 _mockForeground.Setup(f => f.GetProcessName()).Returns("Telegram");
-
-                var result = await detector.DetectContextWithDetailsAsync("Lecture_Notes_V5.pdf", DateTime.Now);
-                results.Add(("Lecture_Notes_V5.pdf", result.DetectedContext, result.SessionBoostApplied, result.SessionBoostReason));
+                var result = await detector.DetectContextWithDetailsAsync("File5.pdf", DateTime.Now);
+                results.Add(("File5.pdf", result.DetectedContext, result.SessionBoostApplied, result.SessionBoostReason));
             }
 
-            // Output results
-            _output.WriteLine("=== Real-World Group Switch Scenario ===");
-            _output.WriteLine($"Session Group: {sessionGroup}");
-            _output.WriteLine($"Different Group: {differentGroup}");
-            _output.WriteLine("");
-            foreach (var (fileName, group, boosted, reason) in results)
-            {
-                _output.WriteLine($"{fileName} -> {group}");
-                _output.WriteLine($"  Boost: {boosted}, Reason: {reason ?? "N/A"}");
-            }
+            // Output
+            _output.WriteLine("=== Results ===");
+            foreach (var r in results)
+                _output.WriteLine($"{r.fileName} -> {r.detectedGroup} (boost: {r.boostApplied})");
 
-            // Assert: PRIMARY GOAL - ALL files go to session group
-            Assert.All(results, r => Assert.Equal(sessionGroup, r.detectedGroup));
+            // Assertions
+            Assert.Equal(sessionGroup, results[0].detectedGroup); // File 1
+            Assert.Equal(sessionGroup, results[1].detectedGroup); // File 2
+            Assert.Equal(sessionGroup, results[2].detectedGroup); // File 3
+            Assert.Equal(sessionGroup, results[3].detectedGroup); // File 4 - boosted
+            Assert.Equal(differentGroup, results[4].detectedGroup); // File 5 - NEW GROUP!
 
-            // Files 1-3: Same group - no boost needed
-            Assert.False(results[0].boostApplied, "File 1: Same group - no boost");
-            Assert.False(results[1].boostApplied, "File 2: Same group - no boost");
-            Assert.False(results[2].boostApplied, "File 3: Same group - no boost");
-
-            // File 4: VS Code foreground - boost for weak foreground
-            Assert.True(results[3].boostApplied, "File 4: VS Code - boost for weak foreground");
-            Assert.Contains("missing", results[3].reason ?? "", StringComparison.OrdinalIgnoreCase);
-
-            // File 5: Different Telegram group - boost for group mismatch
-            Assert.True(results[4].boostApplied, "File 5: Different group - boost for mismatch");
-            Assert.Contains("mismatch", results[4].reason ?? "", StringComparison.OrdinalIgnoreCase);
+            Assert.False(results[0].boostApplied); // Same group
+            Assert.False(results[1].boostApplied); // Same group
+            Assert.False(results[2].boostApplied); // Same group
+            Assert.True(results[3].boostApplied);  // VS Code - boost
+            Assert.False(results[4].boostApplied); // Different Telegram - NO boost (new batch)
         }
 
         // ========================================
-        // Test 17: NEW - Group mismatch with strong pattern (pattern should lose)
+        // Test 17: Group mismatch - foreground wins (UPDATED BEHAVIOR)
         // ========================================
 
         [Fact]
-        public async Task SessionBoost_GroupMismatch_BeatsStrongPattern()
+        public async Task SessionBoost_GroupMismatch_ForegroundWins()
         {
-            // Scenario: Strong pattern for "Different Group", but session is "Session Group"
-            // User switched to "Different Group" in Telegram during download
-            // Session should still win due to boost
+            // UPDATED BEHAVIOR: When user switches to different Telegram group,
+            // treat as NEW BATCH - foreground wins, no boost applied
             
             const string sessionGroup = "Session Group";
             const string differentGroup = "Different Group";
@@ -868,7 +846,6 @@ namespace TelegramOrganizer.Tests.Services
                 TimeoutSeconds = 30
             });
 
-            // Strong pattern pointing to the different group
             _mockDatabase.Setup(d => d.GetBestPatternAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<DateTime>()))
                 .ReturnsAsync(new FilePattern
                 {
@@ -879,28 +856,61 @@ namespace TelegramOrganizer.Tests.Services
                 });
 
             var detector = CreateDetector();
-
-            // Act
             var result = await detector.DetectContextWithDetailsAsync("document.pdf", DateTime.Now);
 
-            // Assert
             _output.WriteLine($"Session: {sessionGroup}");
-            _output.WriteLine($"Foreground (different): {differentGroup}");
-            _output.WriteLine($"Pattern: {differentGroup}");
-            _output.WriteLine($"Background: {differentGroup}");
+            _output.WriteLine($"Foreground: {differentGroup}");
             _output.WriteLine($"Winner: {result.DetectedContext}");
             _output.WriteLine($"Boost: {result.SessionBoostApplied}");
-            _output.WriteLine("");
-            _output.WriteLine("Signal Breakdown:");
-            foreach (var signal in result.Signals)
-            {
-                _output.WriteLine($"  {signal.Source}: {signal.DetectedContext} (power: {signal.GetVotingPower():F3})");
-            }
 
-            // Session should win even against foreground + pattern + background all pointing to different group
-            Assert.Equal(sessionGroup, result.DetectedContext);
-            Assert.True(result.SessionBoostApplied);
-            Assert.Contains("mismatch", result.SessionBoostReason, StringComparison.OrdinalIgnoreCase);
+            // UPDATED: Foreground wins - this is a new batch
+            Assert.Equal(differentGroup, result.DetectedContext);
+            Assert.False(result.SessionBoostApplied, "No boost when user switches to different Telegram group");
+        }
+
+        // ========================================
+        // Test 19: Edge Case: Old session + different Telegram group = NEW BATCH
+        // ========================================
+
+        [Fact]
+        public async Task SessionBoost_EdgeCase_OldSessionStillActive_WhenNewBatchStarts()
+        {
+            // When user returns to Telegram with DIFFERENT group while old session active:
+            // UPDATED BEHAVIOR: NO boost - treat as new batch starting
+            
+            const string oldGroup = "Linear Algebra";
+            const string newGroup = "Credit MOP Spring";
+
+            var detector = CreateDetector();
+
+            _mockSessionManager.Setup(s => s.GetActiveSessionAsync()).ReturnsAsync(new DownloadSession
+            {
+                Id = 1,
+                GroupName = oldGroup,
+                ConfidenceScore = 0.9,
+                LastActivity = DateTime.Now.AddSeconds(-20),
+                TimeoutSeconds = 30,
+                FileCount = 5
+            });
+
+            _mockBackground.Setup(b => b.GetBestRecentGroupName()).Returns((ValueTuple<string, double>?)null);
+            _mockBackground.Setup(b => b.GetMostRecentWindow()).Returns((WindowInfo?)null);
+            _mockDatabase.Setup(d => d.GetBestPatternAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<DateTime>()))
+                .ReturnsAsync((FilePattern?)null);
+
+            _mockForeground.Setup(f => f.GetActiveWindowTitle()).Returns($"{newGroup} - Telegram");
+            _mockForeground.Setup(f => f.GetProcessName()).Returns("Telegram");
+
+            var result = await detector.DetectContextWithDetailsAsync("NewBatch_File1.pdf", DateTime.Now);
+
+            _output.WriteLine($"Old Session: '{oldGroup}'");
+            _output.WriteLine($"Current Foreground: '{newGroup}'");
+            _output.WriteLine($"Detected: '{result.DetectedContext}'");
+            _output.WriteLine($"Boost Applied: {result.SessionBoostApplied}");
+
+            // UPDATED: User is in different Telegram group = new batch
+            Assert.Equal(newGroup, result.DetectedContext);
+            Assert.False(result.SessionBoostApplied, "No boost - user switched to different Telegram group (new batch)");
         }
     }
 }

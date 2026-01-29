@@ -39,7 +39,20 @@ namespace TelegramOrganizer.Infra.Services
         {
             try
             {
-                return await _database.GetActiveSessionAsync();
+                var session = await _database.GetActiveSessionAsync();
+                
+                if (session != null)
+                {
+                    var age = (DateTime.Now - session.LastActivity).TotalSeconds;
+                    _logger.LogDebug($"[SessionManager] GetActiveSession: #{session.Id} '{session.GroupName}' " +
+                                   $"(files: {session.FileCount}, age: {age:F1}s, timeout: {session.TimeoutSeconds}s)");
+                }
+                else
+                {
+                    _logger.LogDebug("[SessionManager] GetActiveSession: No active session");
+                }
+                
+                return session;
             }
             catch (Exception ex)
             {
@@ -59,21 +72,33 @@ namespace TelegramOrganizer.Infra.Services
                 // Check if there's already an active session for the same group
                 var activeSession = await GetActiveSessionAsync();
 
-                if (activeSession != null && activeSession.GroupName == groupName)
-                {
-                    // Reuse existing session, just update activity
-                    activeSession.UpdateActivity();
-                    await _database.UpdateSessionAsync(activeSession);
-
-                    _logger.LogInfo($"[SessionManager] Reusing active session #{activeSession.Id} for '{groupName}'");
-                    return activeSession;
-                }
-
-                // End any other active sessions
+                _logger.LogInfo($"[SessionManager] StartSession requested for '{groupName}'");
+                
                 if (activeSession != null)
                 {
-                    _logger.LogInfo($"[SessionManager] Ending previous session #{activeSession.Id} for '{activeSession.GroupName}'");
-                    await EndSessionAsync(activeSession.Id);
+                    _logger.LogInfo($"[SessionManager]   Existing session: #{activeSession.Id} '{activeSession.GroupName}' " +
+                                  $"(files: {activeSession.FileCount})");
+                    
+                    if (activeSession.GroupName == groupName)
+                    {
+                        // Reuse existing session, just update activity
+                        activeSession.UpdateActivity();
+                        await _database.UpdateSessionAsync(activeSession);
+
+                        _logger.LogInfo($"[SessionManager]   REUSING session #{activeSession.Id} (same group)");
+                        return activeSession;
+                    }
+                    else
+                    {
+                        // IMPORTANT: Different group - this is the edge case!
+                        _logger.LogWarning($"[SessionManager]   GROUP MISMATCH: Session='{activeSession.GroupName}', Requested='{groupName}'");
+                        _logger.LogInfo($"[SessionManager]   Ending previous session #{activeSession.Id} for '{activeSession.GroupName}'");
+                        await EndSessionAsync(activeSession.Id);
+                    }
+                }
+                else
+                {
+                    _logger.LogInfo($"[SessionManager]   No existing session");
                 }
 
                 // Create new session
@@ -82,7 +107,7 @@ namespace TelegramOrganizer.Infra.Services
                 newSession.ConfidenceScore = confidenceScore;
                 await _database.UpdateSessionAsync(newSession);
 
-                _logger.LogInfo($"[SessionManager] Started new session #{newSession.Id} for '{groupName}' " +
+                _logger.LogInfo($"[SessionManager] CREATED new session #{newSession.Id} for '{groupName}' " +
                               $"(confidence: {confidenceScore:F2}, timeout: {_defaultTimeoutSeconds}s)");
 
                 // Fire event
@@ -105,13 +130,28 @@ namespace TelegramOrganizer.Infra.Services
         {
             try
             {
+                _logger.LogInfo($"[SessionManager] AddFileToSession: '{fileName}' -> '{groupName}'");
+                
                 // Get or create active session
                 var session = await GetActiveSessionAsync();
 
-                if (session == null || session.GroupName != groupName)
+                if (session == null)
                 {
-                    // Create new session if none exists or group changed
+                    _logger.LogInfo($"[SessionManager]   No active session - creating new one");
                     session = await StartSessionAsync(groupName);
+                }
+                else if (session.GroupName != groupName)
+                {
+                    // CRITICAL: Group mismatch during file add
+                    _logger.LogWarning($"[SessionManager]   FILE-SESSION GROUP MISMATCH!");
+                    _logger.LogWarning($"[SessionManager]     File wants: '{groupName}'");
+                    _logger.LogWarning($"[SessionManager]     Session has: '{session.GroupName}'");
+                    _logger.LogWarning($"[SessionManager]     Creating new session (this may break batch consistency)");
+                    session = await StartSessionAsync(groupName);
+                }
+                else
+                {
+                    _logger.LogInfo($"[SessionManager]   Using existing session #{session.Id} (group matches)");
                 }
 
                 // Add file to session
@@ -121,7 +161,7 @@ namespace TelegramOrganizer.Infra.Services
                 session.AddFile(fileName);
                 await _database.UpdateSessionAsync(session);
 
-                _logger.LogDebug($"[SessionManager] Added '{fileName}' to session #{session.Id} " +
+                _logger.LogInfo($"[SessionManager] Added '{fileName}' to session #{session.Id} " +
                                $"(total files: {session.FileCount})");
 
                 // Fire event
