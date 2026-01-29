@@ -360,22 +360,24 @@ namespace TelegramOrganizer.Tests.Performance
         /// <summary>
         /// Benchmark: Session timeout scenario.
         /// Tests detection accuracy when session is old.
-        /// Target: Foreground or background should win over old session.
+        /// Note: With group mismatch detection, if foreground and session differ,
+        /// the session boost applies. This test verifies the age penalty by using
+        /// matching groups.
         /// </summary>
         [Fact]
         public async Task Accuracy_OldSession_ReducedWeight()
         {
             // Arrange - Old session (25 seconds old, 30 second timeout)
-            const string foregroundGroup = "Fresh Group";
-            const string sessionGroup = "Old Session Group";
+            // Use SAME group name to test age penalty without triggering group mismatch boost
+            const string sameGroup = "Same Group";
             
-            _mockForeground.Setup(f => f.GetActiveWindowTitle()).Returns($"{foregroundGroup} - Telegram");
+            _mockForeground.Setup(f => f.GetActiveWindowTitle()).Returns($"{sameGroup} - Telegram");
             _mockBackground.Setup(b => b.GetBestRecentGroupName()).Returns((ValueTuple<string, double>?)null);
             _mockBackground.Setup(b => b.GetMostRecentWindow()).Returns((WindowInfo?)null);
             _mockSessionManager.Setup(s => s.GetActiveSessionAsync()).ReturnsAsync(new DownloadSession
             {
                 Id = 1,
-                GroupName = sessionGroup,
+                GroupName = sameGroup, // Same as foreground - tests pure age penalty
                 ConfidenceScore = 0.9,
                 LastActivity = DateTime.Now.AddSeconds(-25), // 25 seconds old
                 TimeoutSeconds = 30
@@ -386,16 +388,25 @@ namespace TelegramOrganizer.Tests.Performance
             var detector = CreateDetector();
 
             // Act
-            var result = await detector.DetectContextAsync("test.pdf", DateTime.Now);
+            var result = await detector.DetectContextWithDetailsAsync("test.pdf", DateTime.Now);
 
             // Assert
             _output.WriteLine($"Old Session Test:");
-            _output.WriteLine($"  Foreground: {foregroundGroup}");
-            _output.WriteLine($"  Session (25s old): {sessionGroup}");
-            _output.WriteLine($"  Winner: {result}");
+            _output.WriteLine($"  Foreground: {sameGroup}");
+            _output.WriteLine($"  Session (25s old): {sameGroup}");
+            _output.WriteLine($"  Winner: {result.DetectedContext}");
+            _output.WriteLine($"  Session Boost Applied: {result.SessionBoostApplied}");
             
-            // Fresh foreground should beat old session due to age penalty
-            Assert.Equal(foregroundGroup, result);
+            // Both point to same group, so result should be that group
+            Assert.Equal(sameGroup, result.DetectedContext);
+            // No boost should be applied since groups match
+            Assert.False(result.SessionBoostApplied);
+            
+            // Verify session has age-reduced confidence
+            var sessionSignal = result.Signals.Find(s => s.Source == "Session");
+            Assert.NotNull(sessionSignal);
+            _output.WriteLine($"  Session Confidence: {sessionSignal!.Confidence:F2} (should be < 0.9 due to age)");
+            Assert.True(sessionSignal.Confidence < 0.9, "Session confidence should be reduced due to 25s age");
         }
 
         /// <summary>

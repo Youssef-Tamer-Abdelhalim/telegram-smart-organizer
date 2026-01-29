@@ -14,6 +14,10 @@ namespace TelegramOrganizer.Core.Contracts
     /// 2. Background Monitor - Recent Telegram activity (medium weight)
     /// 3. Pattern Learning - Historical patterns from database (lower weight)
     /// 4. Active Session - Current download session context (medium-high weight)
+    /// 
+    /// Session Priority Boost:
+    /// When an active session exists and foreground is weak/missing (user switched apps),
+    /// the session signal is boosted to maintain batch download consistency.
     /// </summary>
     public interface IMultiSourceContextDetector
     {
@@ -72,7 +76,7 @@ namespace TelegramOrganizer.Core.Contracts
         Task RecordFeedbackAsync(string fileName, string detectedContext, string? actualContext, bool wasCorrect);
 
         // ========================================
-        // Configuration
+        // Configuration - Base Weights
         // ========================================
 
         /// <summary>
@@ -112,6 +116,36 @@ namespace TelegramOrganizer.Core.Contracts
         int MaxSignalAgeSeconds { get; set; }
 
         // ========================================
+        // Configuration - Session Priority Boost
+        // ========================================
+
+        /// <summary>
+        /// Enable/disable session priority boost when foreground is weak/missing.
+        /// When enabled, active session signals are boosted to maintain batch download consistency.
+        /// Default: true (recommended for batch download consistency)
+        /// </summary>
+        bool UseSessionPriorityBoost { get; set; }
+
+        /// <summary>
+        /// Threshold below which foreground is considered "weak" (voting power).
+        /// When foreground voting power is below this threshold, session boost is applied.
+        /// Default: 0.3
+        /// </summary>
+        double ForegroundWeakThreshold { get; set; }
+
+        /// <summary>
+        /// Multiplier applied to session weight when boost is triggered.
+        /// Default: 2.0 (doubles the session weight from 0.4 to 0.8)
+        /// </summary>
+        double SessionBoostMultiplier { get; set; }
+
+        /// <summary>
+        /// Multiplier applied to non-session signals when boost is triggered.
+        /// Default: 0.5 (reduces other signals by 50% to prevent interference)
+        /// </summary>
+        double OtherSignalsReductionMultiplier { get; set; }
+
+        // ========================================
         // Statistics
         // ========================================
 
@@ -129,6 +163,11 @@ namespace TelegramOrganizer.Core.Contracts
         /// Gets the average detection time in milliseconds.
         /// </summary>
         double AverageDetectionTimeMs { get; }
+
+        /// <summary>
+        /// Gets the number of times session priority boost was applied.
+        /// </summary>
+        int SessionBoostCount { get; }
 
         /// <summary>
         /// Resets all statistics.

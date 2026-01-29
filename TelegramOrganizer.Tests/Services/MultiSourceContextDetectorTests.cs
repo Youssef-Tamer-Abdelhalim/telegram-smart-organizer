@@ -338,15 +338,17 @@ namespace TelegramOrganizer.Tests.Services
         [Fact]
         public async Task DetectContext_OldSession_ReceivesPenalty()
         {
-            // Arrange - Old session (25 seconds ago)
-            _mockForeground.Setup(f => f.GetActiveWindowTitle()).Returns("Fresh Group - Telegram");
+            // Arrange - Old session (25 seconds ago) with SAME group name as foreground
+            // This tests that old sessions receive age penalties when groups match
+            // (no boost is applied when groups are the same)
+            _mockForeground.Setup(f => f.GetActiveWindowTitle()).Returns("Same Group - Telegram");
             _mockForeground.Setup(f => f.GetProcessName()).Returns("Telegram");
             _mockBackground.Setup(b => b.GetBestRecentGroupName()).Returns((ValueTuple<string, double>?)null);
             _mockBackground.Setup(b => b.GetMostRecentWindow()).Returns((WindowInfo?)null);
             _mockSessionManager.Setup(s => s.GetActiveSessionAsync()).ReturnsAsync(new DownloadSession
             {
                 Id = 1,
-                GroupName = "Old Session Group",
+                GroupName = "Same Group", // Same as foreground - no boost will be applied
                 ConfidenceScore = 0.9,
                 LastActivity = DateTime.Now.AddSeconds(-25), // 25 seconds old
                 TimeoutSeconds = 30
@@ -357,10 +359,21 @@ namespace TelegramOrganizer.Tests.Services
             var detector = CreateDetector();
 
             // Act
-            var result = await detector.DetectContextAsync("test.pdf", DateTime.Now);
+            var result = await detector.DetectContextWithDetailsAsync("test.pdf", DateTime.Now);
 
-            // Assert - Fresh foreground should beat old session
-            Assert.Equal("Fresh Group", result);
+            // Assert - Both foreground and session agree, but session has age penalty
+            // Foreground: 0.5 * 0.95 = 0.475
+            // Session (with 25s age penalty): 0.4 * 0.9 * ~0.58 = 0.21 (reduced due to age)
+            // They point to same group, so result is "Same Group"
+            Assert.Equal("Same Group", result.DetectedContext);
+            Assert.False(result.SessionBoostApplied, "No boost when groups match");
+            
+            // Verify session signal has reduced confidence due to age
+            var sessionSignal = result.Signals.Find(s => s.Source == "Session");
+            Assert.NotNull(sessionSignal);
+            // Session confidence should be reduced from 0.9 due to age penalty
+            // Age penalty: 1 - (25 / 60) ? 0.58, so adjusted confidence ? 0.9 * 0.58 ? 0.52
+            Assert.True(sessionSignal!.Confidence < 0.9, "Session should have reduced confidence due to age");
         }
 
         [Fact]

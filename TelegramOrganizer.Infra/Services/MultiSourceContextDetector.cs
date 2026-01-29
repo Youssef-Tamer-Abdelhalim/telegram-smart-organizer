@@ -13,6 +13,9 @@ namespace TelegramOrganizer.Infra.Services
     /// <summary>
     /// Multi-source context detector that combines signals from foreground window,
     /// background monitor, pattern learning, and active sessions using weighted voting.
+    /// 
+    /// Includes Session Priority Boost to maintain batch download consistency when
+    /// users switch away from Telegram during large file downloads.
     /// </summary>
     public class MultiSourceContextDetector : IMultiSourceContextDetector
     {
@@ -30,6 +33,7 @@ namespace TelegramOrganizer.Infra.Services
         private int _totalDetections;
         private int _consensusDetections;
         private double _totalDetectionTimeMs;
+        private int _sessionBoostCount;
 
         // Default weights (configurable)
         public double ForegroundWeight { get; set; } = 0.5;
@@ -39,10 +43,17 @@ namespace TelegramOrganizer.Infra.Services
         public double MinimumConfidenceThreshold { get; set; } = 0.3;
         public int MaxSignalAgeSeconds { get; set; } = 30;
 
+        // Session Priority Boost configuration
+        public bool UseSessionPriorityBoost { get; set; } = true;
+        public double ForegroundWeakThreshold { get; set; } = 0.3;
+        public double SessionBoostMultiplier { get; set; } = 2.0;
+        public double OtherSignalsReductionMultiplier { get; set; } = 0.5;
+
         // Statistics properties
         public int TotalDetections => _totalDetections;
         public int ConsensusDetections => _consensusDetections;
         public double AverageDetectionTimeMs => _totalDetections > 0 ? _totalDetectionTimeMs / _totalDetections : 0;
+        public int SessionBoostCount => _sessionBoostCount;
 
         public MultiSourceContextDetector(
             IContextDetector foregroundDetector,
@@ -86,15 +97,26 @@ namespace TelegramOrganizer.Infra.Services
                 }
                 else
                 {
-                    // Perform weighted voting
-                    var (detectedContext, score, breakdown) = PerformWeightedVoting(validSignals);
+                    // Perform weighted voting (with session priority boost if applicable)
+                    var (detectedContext, score, breakdown, boostApplied, boostReason) = PerformWeightedVoting(validSignals);
                     
                     result.DetectedContext = detectedContext;
                     result.WinningScore = score;
                     result.SignalBreakdown = breakdown;
+                    result.SessionBoostApplied = boostApplied;
+                    result.SessionBoostReason = boostReason;
                     
                     // Calculate overall confidence
                     result.OverallConfidence = CalculateOverallConfidence(validSignals, detectedContext);
+                    
+                    // Track session boost usage
+                    if (boostApplied)
+                    {
+                        lock (_lock)
+                        {
+                            _sessionBoostCount++;
+                        }
+                    }
                 }
 
                 stopwatch.Stop();
@@ -133,6 +155,7 @@ namespace TelegramOrganizer.Infra.Services
                 var foregroundSignal = CollectForegroundSignal();
                 if (foregroundSignal != null)
                 {
+                    foregroundSignal.OriginalWeight = foregroundSignal.Weight;
                     signals.Add(foregroundSignal);
                     _logger.LogDebug($"[MultiSource] Foreground: {foregroundSignal}");
                 }
@@ -148,6 +171,7 @@ namespace TelegramOrganizer.Infra.Services
                 var backgroundSignal = CollectBackgroundSignal();
                 if (backgroundSignal != null)
                 {
+                    backgroundSignal.OriginalWeight = backgroundSignal.Weight;
                     signals.Add(backgroundSignal);
                     _logger.LogDebug($"[MultiSource] Background: {backgroundSignal}");
                 }
@@ -163,6 +187,7 @@ namespace TelegramOrganizer.Infra.Services
                 var sessionSignal = await CollectSessionSignalAsync();
                 if (sessionSignal != null)
                 {
+                    sessionSignal.OriginalWeight = sessionSignal.Weight;
                     signals.Add(sessionSignal);
                     _logger.LogDebug($"[MultiSource] Session: {sessionSignal}");
                 }
@@ -178,6 +203,7 @@ namespace TelegramOrganizer.Infra.Services
                 var patternSignal = await CollectPatternSignalAsync(fileName, downloadTime);
                 if (patternSignal != null)
                 {
+                    patternSignal.OriginalWeight = patternSignal.Weight;
                     signals.Add(patternSignal);
                     _logger.LogDebug($"[MultiSource] Pattern: {patternSignal}");
                 }
@@ -321,8 +347,75 @@ namespace TelegramOrganizer.Infra.Services
             };
         }
 
-        private (string context, double score, Dictionary<string, double> breakdown) PerformWeightedVoting(List<ContextSignal> signals)
+        private (string context, double score, Dictionary<string, double> breakdown, bool boostApplied, string? boostReason) 
+            PerformWeightedVoting(List<ContextSignal> signals)
         {
+            bool boostApplied = false;
+            string? boostReason = null;
+
+            // Check if session priority boost should be applied
+            if (UseSessionPriorityBoost)
+            {
+                var sessionSignal = signals.FirstOrDefault(s => s.Source == "Session" && s.IsValid());
+                var foregroundSignal = signals.FirstOrDefault(s => s.Source == "Foreground");
+
+                if (sessionSignal != null)
+                {
+                    bool shouldBoost = false;
+                    
+                    // Scenario 1: Foreground is weak or missing (user switched to non-Telegram app)
+                    double foregroundPower = foregroundSignal?.GetVotingPower() ?? 0;
+                    bool foregroundWeak = foregroundPower < ForegroundWeakThreshold;
+
+                    if (foregroundWeak)
+                    {
+                        shouldBoost = true;
+                        boostReason = foregroundSignal == null 
+                            ? "Foreground missing (user switched apps)" 
+                            : $"Foreground weak (power: {foregroundPower:F2} < threshold: {ForegroundWeakThreshold:F2})";
+                    }
+                    // Scenario 2: Foreground is strong Telegram but DIFFERENT group than session
+                    // This handles the case where user switches to different Telegram group during batch download
+                    else if (foregroundSignal != null && 
+                             !string.IsNullOrEmpty(foregroundSignal.DetectedContext) &&
+                             !foregroundSignal.DetectedContext.Equals(sessionSignal.DetectedContext, 
+                                                                      StringComparison.OrdinalIgnoreCase))
+                    {
+                        // User switched to different Telegram group during batch download
+                        // Maintain session consistency - don't let new group take over mid-batch
+                        shouldBoost = true;
+                        boostReason = $"Group mismatch detected - Session: '{sessionSignal.DetectedContext}', " +
+                                     $"Foreground: '{foregroundSignal.DetectedContext}' - maintaining batch consistency";
+                        
+                        _logger.LogWarning($"[MultiSource] User switched from '{sessionSignal.DetectedContext}' " +
+                                         $"to '{foregroundSignal.DetectedContext}' during active batch download - " +
+                                         $"applying session lock to prevent file misdirection");
+                    }
+
+                    if (shouldBoost)
+                    {
+                        _logger.LogInfo($"[MultiSource] Session Priority Boost ACTIVATED - {boostReason}");
+                        _logger.LogInfo($"[MultiSource] Active session: '{sessionSignal.DetectedContext}' " +
+                                      $"(original weight: {sessionSignal.Weight:F2} -> boosted: {sessionSignal.Weight * SessionBoostMultiplier:F2})");
+
+                        // Boost session signal
+                        sessionSignal.Weight *= SessionBoostMultiplier;
+                        sessionSignal.WasBoosted = true;
+
+                        // Reduce other signals to prevent interference
+                        foreach (var signal in signals.Where(s => s.Source != "Session"))
+                        {
+                            var originalWeight = signal.Weight;
+                            signal.Weight *= OtherSignalsReductionMultiplier;
+                            _logger.LogDebug($"[MultiSource] Reduced {signal.Source} weight: {originalWeight:F2} -> {signal.Weight:F2}");
+                        }
+
+                        _logger.LogInfo($"[MultiSource] Boost applied - Session now dominant for batch consistency");
+                        boostApplied = true;
+                    }
+                }
+            }
+
             // Group signals by detected context and calculate total weighted score
             var votes = signals
                 .GroupBy(s => s.DetectedContext)
@@ -337,7 +430,7 @@ namespace TelegramOrganizer.Infra.Services
 
             if (votes.Count == 0)
             {
-                return ("Unsorted", 0, new Dictionary<string, double>());
+                return ("Unsorted", 0, new Dictionary<string, double>(), boostApplied, boostReason);
             }
 
             var winner = votes.First();
@@ -347,7 +440,7 @@ namespace TelegramOrganizer.Infra.Services
 
             _logger.LogDebug($"[MultiSource] Voting results: {string.Join(", ", votes.Select(v => $"{v.Context}={v.TotalScore:F2}"))}");
 
-            return (winner.Context, winner.TotalScore, breakdown);
+            return (winner.Context, winner.TotalScore, breakdown, boostApplied, boostReason);
         }
 
         private double CalculateOverallConfidence(List<ContextSignal> signals, string winningContext)
@@ -430,6 +523,7 @@ namespace TelegramOrganizer.Infra.Services
                 _totalDetections = 0;
                 _consensusDetections = 0;
                 _totalDetectionTimeMs = 0;
+                _sessionBoostCount = 0;
                 _lastResult = null;
             }
         }
@@ -443,8 +537,28 @@ namespace TelegramOrganizer.Infra.Services
             if (string.IsNullOrWhiteSpace(windowTitle))
                 return false;
 
-            return processName.Contains("Telegram", StringComparison.OrdinalIgnoreCase) ||
-                   windowTitle.Contains("Telegram", StringComparison.OrdinalIgnoreCase);
+            // Check process name first - most reliable
+            if (processName.Equals("Telegram", StringComparison.OrdinalIgnoreCase) ||
+                processName.Equals("Telegram.exe", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            // Check window title - look for " - Telegram" suffix which is the standard Telegram format
+            // This avoids false positives like "TelegramOrganizer - Visual Studio"
+            if (windowTitle.EndsWith(" - Telegram", StringComparison.OrdinalIgnoreCase) ||
+                windowTitle.EndsWith(" – Telegram", StringComparison.OrdinalIgnoreCase)) // em-dash
+            {
+                return true;
+            }
+
+            // Also check for just "Telegram" as the title (main window with no chat open)
+            if (windowTitle.Equals("Telegram", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return false;
         }
 
         /// <summary>

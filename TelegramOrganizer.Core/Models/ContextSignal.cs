@@ -25,6 +25,11 @@ namespace TelegramOrganizer.Core.Models
         public double Weight { get; set; }
 
         /// <summary>
+        /// Original weight before any boost was applied
+        /// </summary>
+        public double OriginalWeight { get; set; }
+
+        /// <summary>
         /// Confidence in this detection (0.0 - 1.0)
         /// Combined with weight for final voting score
         /// </summary>
@@ -39,6 +44,11 @@ namespace TelegramOrganizer.Core.Models
         /// Additional metadata about the signal (optional)
         /// </summary>
         public string? Metadata { get; set; }
+
+        /// <summary>
+        /// Whether this signal was boosted (session priority boost)
+        /// </summary>
+        public bool WasBoosted { get; set; }
 
         /// <summary>
         /// Calculates the effective voting power of this signal.
@@ -69,7 +79,8 @@ namespace TelegramOrganizer.Core.Models
 
         public override string ToString()
         {
-            return $"[{Source}] {DetectedContext} (weight: {Weight:F2}, confidence: {Confidence:F2}, power: {GetVotingPower():F2})";
+            var boostIndicator = WasBoosted ? " [BOOSTED]" : "";
+            return $"[{Source}] {DetectedContext} (weight: {Weight:F2}, confidence: {Confidence:F2}, power: {GetVotingPower():F2}){boostIndicator}";
         }
     }
 
@@ -110,6 +121,17 @@ namespace TelegramOrganizer.Core.Models
         public double DetectionTimeMs { get; set; }
 
         /// <summary>
+        /// Whether session priority boost was applied for this detection.
+        /// This happens when an active session exists but foreground is weak/missing.
+        /// </summary>
+        public bool SessionBoostApplied { get; set; }
+
+        /// <summary>
+        /// Reason why session boost was applied (for logging/debugging)
+        /// </summary>
+        public string? SessionBoostReason { get; set; }
+
+        /// <summary>
         /// Whether multiple sources agreed on the context
         /// </summary>
         public bool HasConsensus => Signals.Count(s => s.DetectedContext == DetectedContext) > 1;
@@ -121,9 +143,10 @@ namespace TelegramOrganizer.Core.Models
 
         public override string ToString()
         {
+            var boostInfo = SessionBoostApplied ? " [SESSION BOOSTED]" : "";
             return $"Detected: '{DetectedContext}' (confidence: {OverallConfidence:F2}, " +
                    $"score: {WinningScore:F2}, signals: {ValidSignalCount}, " +
-                   $"consensus: {(HasConsensus ? "Yes" : "No")})";
+                   $"consensus: {(HasConsensus ? "Yes" : "No")}){boostInfo}";
         }
     }
 }
