@@ -12,17 +12,18 @@
     <AssemblyName>TelegramSmartOrganizer</AssemblyName>
     <Product>Telegram Smart Organizer</Product>
     <Company>TelegramOrganizer</Company>
-    <Copyright>Copyright © 2024</Copyright>
-    <Version>1.0.0</Version>
-    <FileVersion>1.0.0.0</FileVersion>
-    <AssemblyVersion>1.0.0.0</AssemblyVersion>
-    <Description>Context-aware file organizer for Telegram downloads</Description>
+    <Copyright>Copyright © 2024-2026</Copyright>
+    <Version>2.1.0</Version>
+    <FileVersion>2.1.0.0</FileVersion>
+    <AssemblyVersion>2.1.0.0</AssemblyVersion>
+    <Description>Context-aware file organizer for Telegram downloads with multi-source detection</Description>
     
     <!-- Publishing Options -->
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>false</SelfContained>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <!-- Compression only works with self-contained, removed to allow non-self-contained publish -->
+    <!-- <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile> -->
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
   </PropertyGroup>
 

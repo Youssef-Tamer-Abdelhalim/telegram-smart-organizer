@@ -2,9 +2,9 @@
 ; Download Inno Setup from: https://jrsoftware.org/isinfo.php
 
 #define MyAppName "Telegram Smart Organizer"
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "2.1.0"
 #define MyAppPublisher "TelegramOrganizer"
-#define MyAppURL "https://github.com/yourusername/telegram-smart-organizer"
+#define MyAppURL "https://github.com/Youssef-Tamer-Abdelhalim/telegram-smart-organizer"
 #define MyAppExeName "TelegramSmartOrganizer.exe"
 
 [Setup]
@@ -50,11 +50,19 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Name: "startupicon"; Description: "Start with Windows"; GroupDescription: "Startup:"; Flags: unchecked
 
 [Files]
-; Main Application
+; Main Application (single-file publish)
 Source: "..\publish\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 
-; If not using single-file publish, include all files:
-; Source: "..\publish\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; SQLite native libraries (required for v2.0+)
+Source: "..\publish\e_sqlite3.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "..\publish\runtimes\win-x64\native\e_sqlite3.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+
+; Include all additional files from publish folder (if not using single-file)
+Source: "..\publish\*.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "..\publish\*.json"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+
+; Include runtimes folder for SQLite native binaries
+Source: "..\publish\runtimes\*"; DestDir: "{app}\runtimes"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
@@ -78,6 +86,8 @@ begin
 end;
 
 function InitializeSetup(): Boolean;
+var
+  ResultCode: Integer;
 begin
   Result := True;
   
